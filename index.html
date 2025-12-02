@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI YouTube Video Script Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.22.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0"
+  }
+}
+</script>
+<style>
+  @keyframes kenburns-effect {
+    0% {
+      transform: scale(1.0) translate(0, 0);
+      opacity: 0.9;
+    }
+    100% {
+      transform: scale(1.1) translate(-2%, -2%);
+      opacity: 1;
+    }
+  }
+  .animate-kenburns {
+    animation: kenburns-effect 8s ease-out forwards;
+  }
+  @keyframes sound-wave {
+    0% {
+      transform: scaleY(0.1);
+    }
+    100% {
+      transform: scaleY(1);
+    }
+  }
+</style>
+</head>
+  <body class="bg-slate-900">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

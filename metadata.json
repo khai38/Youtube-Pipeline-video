@@ -1,0 +1,5 @@
+{
+  "name": "AI YouTube Video Script Generator",
+  "description": "An application that uses AI to generate a TTS script from a book summary or topic, generates relevant images for each scene, and prepares it for a simulated YouTube upload.",
+  "requestFramePermissions": []
+}
