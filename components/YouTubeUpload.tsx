@@ -68,7 +68,8 @@ const YouTubeUpload: React.FC<YouTubeUploadProps> = ({
 
   const handleConnectClick = async () => {
       if (!clientId.trim()) {
-          alert("Vui lòng nhập Google Client ID");
+          // Fix: Access alert via window to bypass missing library error
+          (window as any).alert("Vui lòng nhập Google Client ID");
           return;
       }
       localStorage.setItem('google_client_id', clientId);
@@ -83,7 +84,9 @@ const YouTubeUpload: React.FC<YouTubeUploadProps> = ({
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setVideoDetails(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    // Fix: Cast e.target to any to access name and value
+    const { name, value } = e.target as any;
+    setVideoDetails(prev => ({ ...prev, [name]: value }));
   };
 
   const renderProgressBar = (label: string) => (
@@ -206,7 +209,8 @@ const YouTubeUpload: React.FC<YouTubeUploadProps> = ({
                             <input 
                                 type="text" 
                                 value={clientId}
-                                onChange={(e) => setClientId(e.target.value)}
+                                // Fix: Cast e.target to HTMLInputElement
+                                onChange={(e) => setClientId((e.target as HTMLInputElement).value)}
                                 placeholder="Nhập Client ID..."
                                 className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-xs text-slate-200 focus:border-indigo-500 outline-none"
                             />

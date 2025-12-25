@@ -48,7 +48,8 @@ const SceneCard: React.FC<{
                     <input 
                         type="text"
                         value={tempPrompt}
-                        onChange={(e) => setTempPrompt(e.target.value)}
+                        // Fix: Cast e.target to access value
+                        onChange={(e) => setTempPrompt((e.target as HTMLInputElement).value)}
                         placeholder="Nhập từ khóa tìm kiếm video..."
                         className="flex-grow bg-slate-900 border border-indigo-500/50 rounded px-2 py-1 text-xs text-indigo-300 outline-none focus:ring-1 focus:ring-indigo-500"
                         autoFocus

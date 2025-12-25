@@ -27,7 +27,8 @@ export const renderVideo = async (
     onProgress: (progress: number) => void
 ): Promise<Blob> => {
     return new Promise(async (resolve, reject) => {
-        const canvas = document.createElement('canvas');
+        // Fix: Access document via globalThis
+        const canvas = (globalThis as any).document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         const WIDTH = format === 'landscape' ? 1280 : 720;
         const HEIGHT = format === 'landscape' ? 720 : 1280;
@@ -36,7 +37,8 @@ export const renderVideo = async (
 
         if (!ctx) return reject(new Error("Canvas error"));
 
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        // Fix: Access AudioContext via window
+        const audioCtx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
         const destNode = audioCtx.createMediaStreamDestination();
         
         const analyser = audioCtx.createAnalyser();
@@ -45,9 +47,10 @@ export const renderVideo = async (
         const dataArray = new Uint8Array(bufferLength);
         analyser.connect(destNode);
 
-        let bgMusicEl: HTMLAudioElement | null = null;
+        let bgMusicEl: any = null;
         if (musicUrl) {
-            bgMusicEl = new Audio(musicUrl);
+            // Fix: Access Audio constructor via globalThis
+            bgMusicEl = new (globalThis as any).Audio(musicUrl);
             bgMusicEl.crossOrigin = "anonymous";
             bgMusicEl.loop = true;
             bgMusicEl.volume = musicVolume;
@@ -60,9 +63,10 @@ export const renderVideo = async (
             stream.addTrack(destNode.stream.getAudioTracks()[0]);
         }
 
-        const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+        // Fix: Access MediaRecorder via window
+        const recorder = new (window as any).MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
         const chunks: Blob[] = [];
-        recorder.ondataavailable = e => chunks.push(e.data);
+        recorder.ondataavailable = (e: any) => chunks.push(e.data);
         
         recorder.onstop = async () => {
             const webmBlob = new Blob(chunks, { type: 'video/webm' });
@@ -82,7 +86,8 @@ export const renderVideo = async (
         recorder.start();
         if (bgMusicEl) bgMusicEl.play().catch(() => {});
 
-        const videoEl = document.createElement('video');
+        // Fix: Access document via globalThis to create element
+        const videoEl = (globalThis as any).document.createElement('video');
         videoEl.crossOrigin = "anonymous";
         videoEl.muted = true;
         

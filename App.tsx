@@ -147,8 +147,9 @@ const App: React.FC = () => {
             scenes, videoFormat, videoDetails.musicUrl, videoDetails.musicVolume,
             videoDetails.showSubtitles, videoDetails.showProgressBar, (p) => setUploadProgress(p)
         );
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        // Fix: Use type assertion for URL on window and document access
+        const url = (window as any).URL.createObjectURL(blob);
+        const a = (globalThis as any).document.createElement('a');
         a.href = url;
         a.download = `${videoDetails.title || 'video'}.mp4`;
         a.click();

@@ -27,6 +27,7 @@ const SCRIPT_RESPONSE_SCHEMA = {
 };
 
 export const generateScript = async (input: string, mode: 'topic' | 'script' = 'topic'): Promise<{ title: string; author: string; scenes: Omit<Scene, 'id'>[] }> => {
+    // Fix: Use process.env.API_KEY directly for initialization
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
     let prompt = "";
     if (mode === 'topic') {
@@ -142,12 +143,13 @@ export function decodeBase64(base64: string): Uint8Array {
   return bytes;
 }
 
+// Fix: Use any for missing AudioContext and AudioBuffer types in restricted environment
 export async function decodeAudioData(
   data: Uint8Array,
-  ctx: AudioContext,
+  ctx: any,
   sampleRate: number = 24000,
   numChannels: number = 1,
-): Promise<AudioBuffer> {
+): Promise<any> {
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);

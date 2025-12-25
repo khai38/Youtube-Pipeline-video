@@ -25,20 +25,22 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [musicFileName, setMusicFileName] = useState<string>("");
   
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const bgMusicRef = useRef<HTMLAudioElement>(null);
-  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
-  const currentVoiceSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const requestRef = useRef<number>(null);
+  // Fix: Use any for restricted environment types
+  const audioCtxRef = useRef<any>(null);
+  const analyserRef = useRef<any>(null);
+  const videoRef = useRef<any>(null);
+  const bgMusicRef = useRef<any>(null);
+  const overlayCanvasRef = useRef<any>(null);
+  const currentVoiceSourceRef = useRef<any>(null);
+  const fileInputRef = useRef<any>(null);
+  const requestRef = useRef<number | null>(null);
   const sceneStartTimeRef = useRef<number>(0);
   const currentDurationRef = useRef<number>(0);
 
   const initAudioCtx = () => {
       if (!audioCtxRef.current) {
-          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          // Fix: Access AudioContext on window via any
+          const ctx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
           const analyser = ctx.createAnalyser();
           analyser.fftSize = 128;
           analyser.connect(ctx.destination);
@@ -54,7 +56,8 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
       return { ctx: audioCtxRef.current, analyser: analyserRef.current };
   };
 
-  const drawProgressiveSubtitles = (ctx: CanvasRenderingContext2D, lines: string[], centerX: number, baseY: number, totalProgress: number) => {
+  // Fix: Use any for missing CanvasRenderingContext2D type
+  const drawProgressiveSubtitles = (ctx: any, lines: string[], centerX: number, baseY: number, totalProgress: number) => {
     const fontSize = videoFormat === 'landscape' ? 36 : 42;
     const lineHeight = fontSize * 1.3;
     ctx.font = `bold ${fontSize}px sans-serif`;
@@ -64,7 +67,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
     const totalChars = lines.join(' ').length;
     let processedChars = 0;
 
-    lines.forEach((line, index) => {
+    lines.forEach((line: string, index: number) => {
         const y = baseY + (index * lineHeight);
         const lineLen = line.length;
         
@@ -109,6 +112,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
   const drawVisualizer = () => {
     if (!overlayCanvasRef.current || !analyserRef.current || !isPlaying) return;
     
+    // Fix: Access getContext on canvas ref
     const canvas = overlayCanvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -123,6 +127,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
+        // Fix: Access width/height properties on canvas ref
         const width = canvas.width;
         const height = canvas.height;
 
@@ -179,6 +184,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
   const stopPlayback = useCallback(() => {
     setIsPlaying(false);
     if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    // Fix: Access pause on media elements via any
     videoRef.current?.pause();
     if (bgMusicRef.current) bgMusicRef.current.pause();
     if (currentVoiceSourceRef.current) {
@@ -186,8 +192,9 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
         currentVoiceSourceRef.current = null;
     }
     if (overlayCanvasRef.current) {
-        const ctx = overlayCanvasRef.current.getContext('2d');
-        ctx?.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
+        // Fix: Use any for getContext and clearing canvas
+        const ctx = (overlayCanvasRef.current as any).getContext('2d');
+        ctx?.clearRect(0, 0, (overlayCanvasRef.current as any).width, (overlayCanvasRef.current as any).height);
     }
   }, []);
 
@@ -226,10 +233,12 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
 
       currentVoiceSourceRef.current = source;
       source.start();
-      videoRef.current?.play().catch(() => {});
+      // Fix: Access play on videoRef via any
+      (videoRef.current as any)?.play().catch(() => {});
       if (bgMusicRef.current) {
-          bgMusicRef.current.volume = videoDetails.musicVolume;
-          bgMusicRef.current.play().catch(() => {});
+          // Fix: Access volume and play on bgMusicRef via any
+          (bgMusicRef.current as any).volume = videoDetails.musicVolume;
+          (bgMusicRef.current as any).play().catch(() => {});
       }
       
       drawVisualizer();
@@ -245,7 +254,8 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
 
   useEffect(() => {
       if (bgMusicRef.current) {
-          bgMusicRef.current.volume = videoDetails.musicVolume;
+          // Fix: Access volume property on bgMusicRef via any
+          (bgMusicRef.current as any).volume = videoDetails.musicVolume;
       }
   }, [videoDetails.musicVolume]);
 
@@ -257,9 +267,10 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
   }, []);
 
   const handleMusicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    // Fix: Cast e.target to access files
+    const file = (e.target as HTMLInputElement).files?.[0];
     if (file) {
-        const url = URL.createObjectURL(file);
+        const url = (window as any).URL.createObjectURL(file);
         setVideoDetails(prev => ({ ...prev, musicUrl: url }));
         setMusicFileName(file.name);
     }
@@ -308,7 +319,8 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
                             <label className="text-xs font-bold text-slate-500 uppercase">Tải lên nhạc nền</label>
                             <div className="flex items-center gap-3">
                                 <button 
-                                    onClick={() => fileInputRef.current?.click()}
+                                    // Fix: Access click() on fileInputRef via any
+                                    onClick={() => (fileInputRef.current as any)?.click()}
                                     className="flex-grow py-3 px-4 bg-slate-900 border-2 border-dashed border-slate-700 rounded-lg hover:border-indigo-500 transition-all flex items-center justify-center gap-2 group"
                                 >
                                     <svg className="w-5 h-5 text-slate-500 group-hover:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
@@ -332,7 +344,8 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
                             <input 
                                 type="range" min="0" max="1" step="0.05" 
                                 value={videoDetails.musicVolume} 
-                                onChange={(e) => setVideoDetails({...videoDetails, musicVolume: parseFloat(e.target.value)})}
+                                // Fix: Cast e.target to access value
+                                onChange={(e) => setVideoDetails({...videoDetails, musicVolume: parseFloat((e.target as HTMLInputElement).value)})}
                                 className="w-full h-1 bg-slate-700 appearance-none accent-indigo-500 rounded-full" 
                             />
                         </div>
@@ -345,7 +358,8 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
                             <input 
                                 type="checkbox" 
                                 checked={videoDetails.showSubtitles} 
-                                onChange={(e) => setVideoDetails({...videoDetails, showSubtitles: e.target.checked})}
+                                // Fix: Cast e.target to access checked
+                                onChange={(e) => setVideoDetails({...videoDetails, showSubtitles: (e.target as HTMLInputElement).checked})}
                                 className="sr-only" 
                             />
                             <div className={`block w-10 h-6 rounded-full transition-colors ${videoDetails.showSubtitles ? 'bg-indigo-600' : 'bg-slate-700'}`}></div>

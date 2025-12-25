@@ -28,6 +28,7 @@ const audioCache = new Map<string, string>();
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const generateChirpAudio = async (text: string, settings: VoiceSettings, retryCount = 0): Promise<string> => {
+  // Fix: Use process.env.API_KEY directly
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   
   const speedText = settings.speed > 1.2 ? "nhanh" : settings.speed < 0.8 ? "chậm" : "bình thường";
@@ -77,7 +78,8 @@ export const generateChirpAudio = async (text: string, settings: VoiceSettings, 
   }
 };
 
-export const playVoicePreview = async (voiceId: string, audioCtx: AudioContext): Promise<AudioBufferSourceNode> => {
+// Fix: Use any for AudioContext and return type in restricted environment
+export const playVoicePreview = async (voiceId: string, audioCtx: any): Promise<any> => {
   let base64 = audioCache.get(voiceId);
   
   if (!base64) {

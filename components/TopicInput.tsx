@@ -127,7 +127,8 @@ const TopicInput: React.FC<TopicInputProps> = ({ onSubmit, isLoading, error }) =
            <textarea
             id="contentInput"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            // Fix: Cast e.target to access value
+            onChange={(e) => setInput((e.target as HTMLTextAreaElement).value)}
             placeholder={
                 mode === 'topic' 
                 ? "Ví dụ: Tóm tắt sách 'Đắc Nhân Tâm' của Dale Carnegie..." 
