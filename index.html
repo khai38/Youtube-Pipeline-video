@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -13,31 +14,30 @@
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.22.0",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0"
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "@ffmpeg/ffmpeg": "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js",
+    "@ffmpeg/util": "https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js"
   }
 }
 </script>
 <style>
   @keyframes kenburns-effect {
-    0% {
-      transform: scale(1.0) translate(0, 0);
-      opacity: 0.9;
-    }
-    100% {
-      transform: scale(1.1) translate(-2%, -2%);
-      opacity: 1;
-    }
+    0% { transform: scale(1.0) translate(0, 0); opacity: 0.9; }
+    100% { transform: scale(1.1) translate(-2%, -2%); opacity: 1; }
   }
-  .animate-kenburns {
-    animation: kenburns-effect 8s ease-out forwards;
-  }
+  .animate-kenburns { animation: kenburns-effect 8s ease-out forwards; }
   @keyframes sound-wave {
-    0% {
-      transform: scaleY(0.1);
-    }
-    100% {
-      transform: scaleY(1);
-    }
+    0% { transform: scaleY(0.1); }
+    100% { transform: scaleY(1); }
+  }
+  .animate-shimmer {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
   }
 </style>
 </head>

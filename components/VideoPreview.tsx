@@ -1,19 +1,12 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { Scene } from '../types';
+import type { Scene, VideoFormat, VideoDetails } from '../types';
+import { decodeBase64, decodeAudioData } from '../services/geminiService';
 import SoundWave from './SoundWave';
-
-interface VideoDetails {
-    title: string;
-    author: string;
-    description: string;
-    privacy: 'public' | 'private';
-    musicUrl: string;
-    musicVolume: number;
-}
 
 interface VideoPreviewProps {
   scenes: Scene[];
+  videoFormat: VideoFormat;
   videoDetails: VideoDetails;
   setVideoDetails: React.Dispatch<React.SetStateAction<VideoDetails>>;
   onNext?: () => void;
@@ -23,370 +16,360 @@ interface VideoPreviewProps {
 
 const PlayIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8"><path d="M8 5v14l11-7z" /></svg>;
 const PauseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>;
-const PrevIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" /></svg>;
-const NextIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M16 6h2v12h-2zm-4.5 6L6 6v12z" /></svg>;
 
-const VOICE_STYLES = [
-  { name: 'Mặc định', rate: 0.9, pitch: 1.0 },
-  { name: 'Chậm và Rõ ràng', rate: 0.75, pitch: 1.0 },
-  { name: 'Nhanh và Năng động', rate: 1.1, pitch: 1.1 },
-  { name: 'Trầm và Ấm áp', rate: 0.8, pitch: 0.8 },
-  { name: 'Cao và Trong trẻo', rate: 1.0, pitch: 1.3 },
-];
-
-const MUSIC_TRACKS = [
-    { name: 'Không sử dụng', url: '' },
-    { name: 'Hứng khởi (Happy)', url: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3' },
-    { name: 'Thư giãn (Chill)', url: 'https://cdn.pixabay.com/download/audio/2022/02/07/audio_8b45610816.mp3' },
-    { name: 'Kịch tính (Cinematic)', url: 'https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3' },
-    { name: 'Doanh nghiệp (Corporate)', url: 'https://cdn.pixabay.com/download/audio/2022/02/10/audio_fc584613c7.mp3' },
-];
-
-const VideoPreview: React.FC<VideoPreviewProps> = ({ scenes, videoDetails, setVideoDetails, onNext, onBack, readOnly = false }) => {
+const VideoPreview: React.FC<VideoPreviewProps> = ({ 
+    scenes, videoFormat, videoDetails, setVideoDetails, onNext, onBack, readOnly = false 
+}) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
-  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [rate, setRate] = useState(VOICE_STYLES[0].rate);
-  const [pitch, setPitch] = useState(VOICE_STYLES[0].pitch);
-
-  const playNextSceneRef = useRef<(() => void) | null>(null);
+  const [musicFileName, setMusicFileName] = useState<string>("");
+  
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const bgMusicRef = useRef<HTMLAudioElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const currentVoiceSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const requestRef = useRef<number>(null);
+  const sceneStartTimeRef = useRef<number>(0);
+  const currentDurationRef = useRef<number>(0);
 
-  useEffect(() => {
-    const getVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      const viVoices = voices.filter(v => v.lang.startsWith('vi'));
-      setAvailableVoices(viVoices);
-      
-      setSelectedVoice(current => {
-          if (!current && viVoices.length > 0) {
-              return viVoices[0];
+  const initAudioCtx = () => {
+      if (!audioCtxRef.current) {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 128;
+          analyser.connect(ctx.destination);
+          
+          audioCtxRef.current = ctx;
+          analyserRef.current = analyser;
+
+          if (bgMusicRef.current) {
+              const musicSource = ctx.createMediaElementSource(bgMusicRef.current);
+              musicSource.connect(analyser);
           }
-          return current;
-      });
-    };
-    
-    window.speechSynthesis.onvoiceschanged = getVoices;
-    getVoices();
+      }
+      return { ctx: audioCtxRef.current, analyser: analyserRef.current };
+  };
 
-    return () => {
-      window.speechSynthesis.onvoiceschanged = null;
-      window.speechSynthesis.cancel();
+  const drawProgressiveSubtitles = (ctx: CanvasRenderingContext2D, lines: string[], centerX: number, baseY: number, totalProgress: number) => {
+    const fontSize = videoFormat === 'landscape' ? 36 : 42;
+    const lineHeight = fontSize * 1.3;
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const totalChars = lines.join(' ').length;
+    let processedChars = 0;
+
+    lines.forEach((line, index) => {
+        const y = baseY + (index * lineHeight);
+        const lineLen = line.length;
+        
+        const lineStartPercent = processedChars / totalChars;
+        const lineEndPercent = (processedChars + lineLen) / totalChars;
+        
+        let lineProgress = 0;
+        if (totalProgress >= lineEndPercent) {
+            lineProgress = 1;
+        } else if (totalProgress <= lineStartPercent) {
+            lineProgress = 0;
+        } else {
+            lineProgress = (totalProgress - lineStartPercent) / (lineEndPercent - lineStartPercent);
+        }
+
+        // Base text
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = "black";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.fillText(line, centerX, y);
+        
+        // Highlighted text with clipping
+        ctx.save();
+        const textWidth = ctx.measureText(line).width;
+        const startX = centerX - textWidth / 2;
+        const clipWidth = textWidth * lineProgress;
+        
+        ctx.beginPath();
+        ctx.rect(startX, y - fontSize, clipWidth, fontSize * 2);
+        ctx.clip();
+        
+        ctx.fillStyle = "#FFD700";
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = "rgba(255, 215, 0, 0.6)";
+        ctx.fillText(line, centerX, y);
+        ctx.restore();
+
+        processedChars += lineLen + 1;
+    });
+  };
+
+  const drawVisualizer = () => {
+    if (!overlayCanvasRef.current || !analyserRef.current || !isPlaying) return;
+    
+    const canvas = overlayCanvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const analyser = analyserRef.current;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    const renderFrame = () => {
+        if (!isPlaying) return;
+        analyser.getByteFrequencyData(dataArray);
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        const width = canvas.width;
+        const height = canvas.height;
+
+        // 1. Overlays
+        ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+        ctx.fillRect(0, 0, width, height);
+        const vignette = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width * 0.8);
+        vignette.addColorStop(0, "transparent");
+        vignette.addColorStop(1, "rgba(0, 0, 0, 0.6)");
+        ctx.fillStyle = vignette;
+        ctx.fillRect(0, 0, width, height);
+
+        // 2. Equalizer
+        const barWidth = (width / bufferLength) * 2;
+        let barHeight;
+        let xPos = 0;
+        ctx.save();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "rgba(255, 255, 255, 0.4)";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+        for (let i = 0; i < bufferLength; i++) {
+            barHeight = (dataArray[i] / 255) * (height * 0.12);
+            ctx.fillRect(width / 2 + xPos, height - 30 - barHeight, barWidth - 1, barHeight);
+            ctx.fillRect(width / 2 - xPos - barWidth, height - 30 - barHeight, barWidth - 1, barHeight);
+            xPos += barWidth;
+        }
+        ctx.restore();
+
+        // 3. Subtitles in Safe Zone
+        if (videoDetails.showSubtitles && scenes[currentSceneIndex]) {
+            const elapsed = Date.now() - sceneStartTimeRef.current;
+            const progress = Math.min(elapsed / (currentDurationRef.current * 1000), 1);
+            
+            const words = scenes[currentSceneIndex].scene_text_vietnamese.split(' ');
+            const mid = Math.floor(words.length / 2);
+            const lines = [words.slice(0, mid).join(' '), words.slice(mid).join(' ')].filter(l => l.length > 0);
+
+            const safeZoneY = videoFormat === 'vertical' ? height * 0.65 : height * 0.75;
+            
+            // Background plate
+            ctx.fillStyle = "rgba(0,0,0,0.5)";
+            const plateHeight = videoFormat === 'vertical' ? 160 : 120;
+            ctx.fillRect(0, safeZoneY - 40, width, plateHeight);
+            
+            drawProgressiveSubtitles(ctx, lines, width / 2, safeZoneY, progress);
+        }
+        
+        requestRef.current = requestAnimationFrame(renderFrame);
     };
-  }, []);
+
+    renderFrame();
+  };
 
   const stopPlayback = useCallback(() => {
     setIsPlaying(false);
-    window.speechSynthesis.cancel();
+    if (requestRef.current) cancelAnimationFrame(requestRef.current);
     videoRef.current?.pause();
-    if (audioRef.current) {
-        audioRef.current.pause();
+    if (bgMusicRef.current) bgMusicRef.current.pause();
+    if (currentVoiceSourceRef.current) {
+        currentVoiceSourceRef.current.stop();
+        currentVoiceSourceRef.current = null;
+    }
+    if (overlayCanvasRef.current) {
+        const ctx = overlayCanvasRef.current.getContext('2d');
+        ctx?.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
     }
   }, []);
 
-  const changeScene = useCallback((newIndex: number) => {
-    if (newIndex >= 0 && newIndex < scenes.length && newIndex !== currentSceneIndex) {
-      setIsTransitioning(true);
-      setTimeout(() => {
-        setCurrentSceneIndex(newIndex);
-        setIsTransitioning(false);
-      }, 300);
-    } else if (newIndex >= scenes.length) {
-      stopPlayback(); // Stop everything when done
-    }
-  }, [scenes.length, currentSceneIndex, stopPlayback]);
+  const playScene = async (index: number) => {
+      const scene = scenes[index];
+      if (!scene || !scene.audioData) return;
 
-  const handleAutoPlayNextScene = useCallback(() => {
-      changeScene(currentSceneIndex + 1);
-  }, [changeScene, currentSceneIndex]);
-  
-  playNextSceneRef.current = handleAutoPlayNextScene;
+      const { ctx, analyser } = initAudioCtx();
+      if (!ctx || !analyser) return;
+      if (ctx.state === 'suspended') await ctx.resume();
 
-  // Effect to handle audio play/pause
-  useEffect(() => {
-      if (audioRef.current && videoDetails.musicUrl) {
-          audioRef.current.volume = videoDetails.musicVolume;
-          if (isPlaying) {
-              const playPromise = audioRef.current.play();
-              if (playPromise !== undefined) {
-                  playPromise.catch(error => console.log("Audio play prevented:", error));
-              }
-          } else {
-              audioRef.current.pause();
-          }
+      if (currentVoiceSourceRef.current) {
+          currentVoiceSourceRef.current.stop();
       }
-  }, [isPlaying, videoDetails.musicUrl, videoDetails.musicVolume]);
 
-  useEffect(() => {
-    if (isPlaying && scenes[currentSceneIndex] && !isTransitioning) {
-      videoRef.current?.play().catch(e => console.error("Video play failed:", e));
-
-      const utterance = new SpeechSynthesisUtterance(scenes[currentSceneIndex].scene_text_vietnamese);
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-      }
-      utterance.lang = 'vi-VN';
-      utterance.rate = rate;
-      utterance.pitch = pitch;
-      utterance.onend = () => {
-        playNextSceneRef.current?.();
-      };
+      const decodedData = decodeBase64(scene.audioData);
+      const audioBuffer = await decodeAudioData(decodedData, ctx, 24000);
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(analyser);
       
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
-    }
-  }, [isPlaying, currentSceneIndex, scenes, selectedVoice, isTransitioning, rate, pitch]);
+      currentDurationRef.current = audioBuffer.duration;
+      sceneStartTimeRef.current = Date.now();
 
-  
-  const handlePlayToggle = () => {
-    if (isPlaying) {
-      stopPlayback();
-    } else {
-       if (window.speechSynthesis.getVoices().length === 0) {
-        alert("Trình duyệt của bạn đang tải giọng nói. Vui lòng thử lại sau giây lát.");
-        return;
+      source.onended = () => {
+          if (index < scenes.length - 1) {
+              setIsTransitioning(true);
+              setTimeout(() => {
+                  setCurrentSceneIndex(index + 1);
+                  setIsTransitioning(false);
+              }, 100);
+          } else {
+              stopPlayback();
+          }
+      };
+
+      currentVoiceSourceRef.current = source;
+      source.start();
+      videoRef.current?.play().catch(() => {});
+      if (bgMusicRef.current) {
+          bgMusicRef.current.volume = videoDetails.musicVolume;
+          bgMusicRef.current.play().catch(() => {});
       }
-      if (availableVoices.length === 0) {
-        console.warn("Không tìm thấy giọng nói tiếng Việt trên trình duyệt của bạn để phát âm thanh. Bản xem trước sẽ không có tiếng hoặc sử dụng giọng mặc định.");
+      
+      drawVisualizer();
+  };
+
+  useEffect(() => {
+      if (isPlaying) {
+          playScene(currentSceneIndex);
+      } else {
+          stopPlayback();
       }
+  }, [isPlaying, currentSceneIndex]);
 
-      if (currentSceneIndex === scenes.length - 1 && !window.speechSynthesis.speaking) {
-        changeScene(0);
-        if (audioRef.current) audioRef.current.currentTime = 0; // Restart music
+  useEffect(() => {
+      if (bgMusicRef.current) {
+          bgMusicRef.current.volume = videoDetails.musicVolume;
       }
-      setIsPlaying(true);
+  }, [videoDetails.musicVolume]);
+
+  useEffect(() => {
+      return () => {
+          stopPlayback();
+          if (audioCtxRef.current) audioCtxRef.current.close();
+      };
+  }, []);
+
+  const handleMusicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+        const url = URL.createObjectURL(file);
+        setVideoDetails(prev => ({ ...prev, musicUrl: url }));
+        setMusicFileName(file.name);
     }
   };
-
-  const handleManualSceneChange = (direction: 'next' | 'prev') => {
-    stopPlayback();
-    if (direction === 'next') {
-        changeScene(currentSceneIndex + 1);
-    } else {
-        changeScene(currentSceneIndex - 1);
-    }
-  }
-
-  const handleBack = () => {
-    stopPlayback();
-    onBack();
-  };
-  
-  const handleNext = () => {
-    stopPlayback();
-    if (onNext) onNext();
-  };
-
-  const handleVoiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    stopPlayback();
-    const voice = availableVoices.find(v => v.name === e.target.value);
-    setSelectedVoice(voice || null);
-  }
-
-  const handleStyleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    stopPlayback();
-    const styleName = e.target.value;
-    const style = VOICE_STYLES.find(s => s.name === styleName);
-    if (style) {
-      setRate(style.rate);
-      setPitch(style.pitch);
-    }
-  };
-
-  const currentScene = scenes[currentSceneIndex];
-  const progress = ((currentSceneIndex + 1) / scenes.length) * 100;
-  
-  const currentStyleName = VOICE_STYLES.find(s => s.rate === rate && s.pitch === pitch)?.name || 'Tùy chỉnh';
-  const styleOptions = [...VOICE_STYLES];
-  if (currentStyleName === 'Tùy chỉnh') {
-      styleOptions.push({ name: 'Tùy chỉnh', rate, pitch });
-  }
 
   return (
-    <div className="animate-fade-in flex flex-col items-center">
-        {/* Hidden audio element for background music */}
-        <audio ref={audioRef} src={videoDetails.musicUrl} loop />
-
-        <h2 className="text-2xl font-bold text-center text-slate-100">
-            {readOnly ? `Xem lại: ${videoDetails.title}` : 'Xem trước Video'}
-        </h2>
-        <p className="mt-2 text-center text-slate-400">
-            {readOnly ? 'Xem lại video đã tạo của bạn.' : 'Xem lại video của bạn và nghe lồng tiếng.'}
-        </p>
-
-        <div className="w-full max-w-2xl mt-4 space-y-4">
-            <div className="relative aspect-video bg-black rounded-lg overflow-hidden border border-slate-700 shadow-lg">
-              {currentScene?.videoUrl ? (
-                  <video 
-                    ref={videoRef}
-                    src={currentScene.videoUrl} 
-                    key={currentScene.id} 
-                    className={`w-full h-full object-cover transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}
-                    loop 
-                    muted 
-                    playsInline
-                  />
-              ) : (
-                 <div className="w-full h-full flex items-center justify-center bg-slate-800">
-                    <p className="text-slate-500">Video not available</p>
-                </div>
-              )}
-               <div className={`absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
-                    <div className="max-w-md">
-                        <h3 className="text-2xl md:text-3xl font-bold leading-tight drop-shadow-lg">{videoDetails.title}</h3>
-                        {videoDetails.author && <p className="mt-2 text-base text-slate-300">Tác giả: {videoDetails.author}</p>}
+    <div className="animate-fade-in flex flex-col items-center w-full">
+        <audio ref={bgMusicRef} src={videoDetails.musicUrl} loop crossOrigin="anonymous" />
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
+            <div className="flex flex-col items-center">
+                <div className={`w-full ${videoFormat === 'vertical' ? 'max-w-xs' : 'max-w-full'} bg-black rounded-xl overflow-hidden border border-slate-700 shadow-2xl group relative`}>
+                    <div className={`${videoFormat === 'vertical' ? 'aspect-[9/16]' : 'aspect-video'} relative`}>
+                        <video 
+                            ref={videoRef}
+                            src={scenes[currentSceneIndex]?.videoUrl} 
+                            className={`w-full h-full object-cover transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}
+                            loop muted playsInline
+                        />
+                        <canvas 
+                            ref={overlayCanvasRef}
+                            className="absolute inset-0 w-full h-full pointer-events-none z-10"
+                            width={1280}
+                            height={720}
+                        />
                     </div>
                     
-                    <div className="my-6">
-                        <SoundWave isPlaying={isPlaying} />
-                    </div>
-
-                    <div className="flex items-center justify-center gap-6">
-                        <button onClick={() => handleManualSceneChange('prev')} disabled={currentSceneIndex === 0} className="p-3 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"><PrevIcon /></button>
-                        <button onClick={handlePlayToggle} className="p-3 bg-white/20 rounded-full hover:bg-white/30 transition-colors shadow-lg">
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                        <button onClick={() => setIsPlaying(!isPlaying)} className="p-4 bg-white/20 rounded-full backdrop-blur-md">
                             {isPlaying ? <PauseIcon /> : <PlayIcon />}
                         </button>
-                        <button onClick={() => handleManualSceneChange('next')} disabled={currentSceneIndex === scenes.length - 1} className="p-3 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"><NextIcon /></button>
-                    </div>
-              </div>
-            </div>
-
-            <div>
-                 <div className="w-full bg-slate-700 rounded-full h-1.5 mb-2">
-                    <div className="bg-indigo-600 h-1.5 rounded-full" style={{ width: `${progress}%`, transition: 'width 0.5s ease-in-out' }}></div>
-                </div>
-                <p className="text-center text-sm text-slate-400 font-mono">Cảnh {currentSceneIndex + 1} / {scenes.length}</p>
-                <p className="text-center text-slate-300 p-4 bg-slate-900/50 rounded-md mt-2 min-h-[80px]">
-                    {currentScene?.scene_text_vietnamese}
-                </p>
-            </div>
-
-            <div className="pt-4 pb-2 px-4 bg-slate-900/50 rounded-md space-y-4">
-                {/* Voice Control Section */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 items-center border-b border-slate-700 pb-4">
-                    <div className="md:col-span-2">
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Giọng đọc (TTS)</h4>
-                        <label htmlFor="voice-select" className="block text-sm font-medium text-slate-400 mb-1">Giọng Đọc</label>
-                        <select 
-                            id="voice-select"
-                            value={selectedVoice ? selectedVoice.name : ''}
-                            onChange={handleVoiceChange}
-                            disabled={availableVoices.length === 0}
-                            className="block w-full pl-3 pr-10 py-2 bg-slate-800 border border-slate-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md text-slate-200 disabled:bg-slate-700 disabled:cursor-not-allowed"
-                        >
-                            {availableVoices.length > 0 ? (
-                                availableVoices.map(voice => (
-                                    <option key={voice.name} value={voice.name}>
-                                        {voice.name} ({voice.lang})
-                                    </option>
-                                ))
-                            ) : (
-                                <option>Không có giọng đọc tiếng Việt</option>
-                            )}
-                        </select>
-                         {availableVoices.length === 0 && (
-                            <p className="text-xs text-slate-500 mt-1">
-                                Không tìm thấy giọng đọc tiếng Việt. Giọng mặc định của trình duyệt sẽ được sử dụng.
-                            </p>
-                        )}
-                    </div>
-
-                     <div className="md:col-span-2">
-                        <label htmlFor="style-select" className="block text-sm font-medium text-slate-400 mb-1">Phong cách</label>
-                        <select 
-                            id="style-select"
-                            value={currentStyleName}
-                            onChange={handleStyleChange}
-                            className="block w-full pl-3 pr-10 py-2 bg-slate-800 border border-slate-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md text-slate-200"
-                        >
-                            {styleOptions.map(style => (
-                                <option key={style.name} value={style.name}>
-                                    {style.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label htmlFor="rate-slider" className="block text-sm font-medium text-slate-400 mb-1">Tốc độ ({rate.toFixed(2)})</label>
-                        <input
-                            id="rate-slider" type="range" min="0.5" max="1.5" step="0.05" value={rate}
-                            onChange={(e) => { stopPlayback(); setRate(parseFloat(e.target.value)); }}
-                            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                        />
-                    </div>
-
-                    <div>
-                         <label htmlFor="pitch-slider" className="block text-sm font-medium text-slate-400 mb-1">Cao độ ({pitch.toFixed(2)})</label>
-                        <input
-                            id="pitch-slider" type="range" min="0.5" max="1.5" step="0.05" value={pitch}
-                            onChange={(e) => { stopPlayback(); setPitch(parseFloat(e.target.value)); }}
-                            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                        />
                     </div>
                 </div>
+                <div className="mt-4 flex justify-center w-full"><SoundWave isPlaying={isPlaying} /></div>
+            </div>
 
-                {/* Music Control Section */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 items-center">
-                    <div className="md:col-span-2">
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Thư viện âm thanh YouTube (Demo)</h4>
-                        <label htmlFor="music-select" className="block text-sm font-medium text-slate-400 mb-1">Nhạc nền</label>
-                         <select 
-                            id="music-select"
-                            value={videoDetails.musicUrl}
-                            onChange={(e) => { 
-                                stopPlayback(); 
-                                setVideoDetails(prev => ({ ...prev, musicUrl: e.target.value })); 
-                            }}
-                            disabled={readOnly}
-                            className="block w-full pl-3 pr-10 py-2 bg-slate-800 border border-slate-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md text-slate-200 disabled:bg-slate-700 disabled:cursor-not-allowed"
-                        >
-                            {MUSIC_TRACKS.map(track => (
-                                <option key={track.name} value={track.url}>
-                                    {track.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                     <div className="md:col-span-2">
-                        <label htmlFor="volume-slider" className="block text-sm font-medium text-slate-400 mb-1">Âm lượng nhạc nền ({Math.round(videoDetails.musicVolume * 100)}%)</label>
-                        <div className="flex items-center gap-3">
-                            <span className="text-slate-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd" /></svg></span>
-                            <input
-                                id="volume-slider" type="range" min="0" max="1" step="0.05" 
-                                value={videoDetails.musicVolume}
-                                disabled={readOnly || !videoDetails.musicUrl}
-                                onChange={(e) => { 
-                                    setVideoDetails(prev => ({ ...prev, musicVolume: parseFloat(e.target.value) })); 
-                                }}
-                                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 disabled:opacity-50"
-                            />
-                            <span className="text-slate-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg></span>
+            <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 space-y-8 h-fit">
+                <div>
+                    <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
+                        <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+                        Cài đặt Video & Audio
+                    </h3>
+                    
+                    <div className="space-y-4">
+                        <div className="flex flex-col gap-2">
+                            <label className="text-xs font-bold text-slate-500 uppercase">Tải lên nhạc nền</label>
+                            <div className="flex items-center gap-3">
+                                <button 
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="flex-grow py-3 px-4 bg-slate-900 border-2 border-dashed border-slate-700 rounded-lg hover:border-indigo-500 transition-all flex items-center justify-center gap-2 group"
+                                >
+                                    <svg className="w-5 h-5 text-slate-500 group-hover:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                    <span className="text-sm text-slate-300 truncate max-w-[150px]">{musicFileName || "Chọn tệp âm thanh"}</span>
+                                </button>
+                                <input 
+                                    ref={fileInputRef}
+                                    type="file" 
+                                    accept="audio/*" 
+                                    onChange={handleMusicUpload} 
+                                    className="hidden" 
+                                />
+                            </div>
                         </div>
+
+                        <div className="space-y-3">
+                            <div className="flex justify-between items-center">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Âm lượng nhạc nền</label>
+                                <span className="text-xs font-mono text-indigo-400 font-bold">{Math.round(videoDetails.musicVolume * 100)}%</span>
+                            </div>
+                            <input 
+                                type="range" min="0" max="1" step="0.05" 
+                                value={videoDetails.musicVolume} 
+                                onChange={(e) => setVideoDetails({...videoDetails, musicVolume: parseFloat(e.target.value)})}
+                                className="w-full h-1 bg-slate-700 appearance-none accent-indigo-500 rounded-full" 
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="pt-6 border-t border-slate-700 space-y-4">
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                        <div className="relative">
+                            <input 
+                                type="checkbox" 
+                                checked={videoDetails.showSubtitles} 
+                                onChange={(e) => setVideoDetails({...videoDetails, showSubtitles: e.target.checked})}
+                                className="sr-only" 
+                            />
+                            <div className={`block w-10 h-6 rounded-full transition-colors ${videoDetails.showSubtitles ? 'bg-indigo-600' : 'bg-slate-700'}`}></div>
+                            <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${videoDetails.showSubtitles ? 'translate-x-4' : ''}`}></div>
+                        </div>
+                        <span className="text-sm font-bold text-slate-300 group-hover:text-white transition-colors">Hiển thị Phụ đề</span>
+                    </label>
+
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                        <p className="text-[10px] text-red-300 leading-relaxed italic">
+                            * Phụ đề đã được căn chỉnh 2 dòng vào Vùng An Toàn (Safe Zone) giúp hiển thị tốt trên mọi thiết bị.
+                        </p>
                     </div>
                 </div>
             </div>
         </div>
 
-      <div className="mt-8 flex flex-wrap justify-center gap-4">
-        <button
-          onClick={handleBack}
-          className="px-8 py-3 bg-slate-700 text-white font-semibold rounded-lg hover:bg-slate-600 transition-colors"
-        >
-          {readOnly ? 'Đóng' : 'Quay lại'}
-        </button>
-        {!readOnly && (
-            <button
-            onClick={handleNext}
-            className="px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-slate-900 transition-all duration-300 transform hover:scale-105"
-            >
-            Tiếp tục
+        <div className="mt-12 flex gap-4">
+            <button onClick={() => {stopPlayback(); onBack();}} className="px-8 py-3 bg-slate-800 rounded-xl border border-slate-700 hover:bg-slate-700 font-bold transition-all">Quay lại</button>
+            <button onClick={() => {stopPlayback(); onNext?.();}} className="px-12 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2">
+                Tiếp tục Xuất Video
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
             </button>
-        )}
-      </div>
+        </div>
     </div>
   );
 };

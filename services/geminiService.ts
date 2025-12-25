@@ -1,97 +1,45 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Scene } from '../types';
+import type { Scene, VideoProvider } from '../types';
 
-if (!process.env.API_KEY) {
-    throw new Error("API_KEY environment variable is not set");
-}
-
-// Initialize the Google AI client using the API key from environment variables
-// to securely automate the process.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const PIXABAY_API_KEY = '52596467-57721889e8b1d5e08b0da484d';
+const PEXELS_API_KEY = 'jymggzkZE6Ca05J27cPhmDzXY0uAdL9V4ShhgyxCNKFhEJVp9tseOgZf';
 
 const SCRIPT_RESPONSE_SCHEMA = {
     type: Type.OBJECT,
     properties: {
-        title: {
-            type: Type.STRING,
-            description: 'A short, catchy Vietnamese title for the video based on the topic. Should be around 5-10 words.'
-        },
-        author: {
-            type: Type.STRING,
-            description: 'The author of the book if the topic is a book summary. Can be an empty string if not applicable.'
-        },
+        title: { type: Type.STRING },
+        author: { type: Type.STRING },
         scenes: {
             type: Type.ARRAY,
             items: {
               type: Type.OBJECT,
               properties: {
-                scene_text_vietnamese: {
-                  type: Type.STRING,
-                  description: 'The Vietnamese text for the voiceover for this scene.',
-                },
-                image_prompt_english: {
-                  type: Type.STRING,
-                  description: 'A short English video search query (max 3-5 keywords) to find stock video footage.',
-                },
+                character: { type: Type.STRING },
+                scene_text_vietnamese: { type: Type.STRING },
+                image_prompt_english: { type: Type.STRING },
               },
-              required: ["scene_text_vietnamese", "image_prompt_english"],
+              required: ["character", "scene_text_vietnamese", "image_prompt_english"],
             },
         }
     },
     required: ["title", "author", "scenes"]
 };
 
-
-/**
- * Extracts a JSON object string from a larger text block.
- * Handles markdown code fences and other surrounding text.
- * @param text The raw text from the AI response.
- * @returns A string that should be a JSON object.
- */
-const extractJsonObject = (text: string): string => {
-    // First, try to extract from markdown code fences
-    const markdownMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-    let potentialJson = text.trim();
-
-    if (markdownMatch && markdownMatch[1]) {
-        potentialJson = markdownMatch[1].trim();
-    }
-    
-    // Find the first '{' and the last '}'
-    const startIndex = potentialJson.indexOf('{');
-    const lastIndex = potentialJson.lastIndexOf('}');
-    
-    if (startIndex !== -1 && lastIndex > startIndex) {
-        return potentialJson.substring(startIndex, lastIndex + 1);
-    }
-    
-    // If no object found, return the potential JSON as is for parsing attempt
-    return potentialJson;
-}
-
 export const generateScript = async (input: string, mode: 'topic' | 'script' = 'topic'): Promise<{ title: string; author: string; scenes: Omit<Scene, 'id'>[] }> => {
-    let rawResponseText = '';
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
     let prompt = "";
-    
     if (mode === 'topic') {
-        prompt = `Dựa trên chủ đề hoặc tóm tắt sau, hãy tạo nội dung cho một video. Vui lòng cung cấp: 1. Một tiêu đề video ngắn gọn, hấp dẫn bằng tiếng Việt ('title'). 2. Tên tác giả ('author') nếu chủ đề là tóm tắt sách, nếu không thì để trống. 3. Một kịch bản video sẵn sàng cho TTS bằng tiếng Việt, được chia thành các cảnh ngắn gọn ('scenes'). Hãy điều chỉnh số lượng cảnh (tối thiểu 5) dựa trên độ phức tạp của chủ đề. Đối với mỗi cảnh, hãy cung cấp văn bản tiếng Việt ('scene_text_vietnamese') và một cụm từ tìm kiếm video ngắn gọn bằng tiếng Anh (chỉ dùng từ khóa quan trọng, tối đa 3-5 từ) ('image_prompt_english'). Chủ đề: "${input}". QUAN TRỌNG: Chỉ trả về một đối tượng JSON hợp lệ, không có văn bản nào khác hoặc markdown.`;
+        prompt = `Dựa trên chủ đề sau, tạo kịch bản video tiếng Việt. Phân chia rõ ràng AI/Người kể chuyện hoặc Nhân vật đối thoại nếu có. 
+        Trả về JSON: title, author, scenes (character, scene_text_vietnamese, image_prompt_english). Chủ đề: "${input}"`;
     } else {
-        prompt = `Dưới đây là nội dung kịch bản thô cho một video. Hãy phân tích và chuyển đổi nó thành định dạng JSON để làm video.
-        1. 'title': Trích xuất hoặc tạo tiêu đề phù hợp từ nội dung.
-        2. 'author': Tên tác giả nếu có trong văn bản, nếu không thì để trống.
-        3. 'scenes': Chia toàn bộ văn bản đầu vào thành các cảnh nhỏ (scenes) để làm video.
-           - 'scene_text_vietnamese': Giữ nguyên nội dung gốc của người dùng, chỉ chia nhỏ ra thành các câu/đoạn ngắn phù hợp để hiển thị và đọc.
-           - 'image_prompt_english': Tạo câu lệnh tìm kiếm video stock bằng tiếng Anh (từ khóa đơn giản, tối đa 3-5 từ) mô tả nội dung của đoạn văn bản đó.
-        
-        Nội dung kịch bản: "${input}".
-        QUAN TRỌNG: Chỉ trả về một đối tượng JSON hợp lệ, không có văn bản nào khác hoặc markdown.`;
+        prompt = `Chuyển kịch bản sau sang JSON chuyên nghiệp. Phân loại người nói vào trường 'character'.
+        Nội dung: "${input}"`;
     }
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
@@ -99,72 +47,116 @@ export const generateScript = async (input: string, mode: 'topic' | 'script' = '
             },
         });
 
-        rawResponseText = response.text;
-        const jsonText = extractJsonObject(rawResponseText);
-        const parsedScript = JSON.parse(jsonText);
-
-        if (!parsedScript || typeof parsedScript !== 'object' || !Array.isArray(parsedScript.scenes)) {
-          throw new Error("AI response is not in the expected object format with a scenes array.");
+        if (!response.text) {
+            throw new Error("Empty response from Gemini API");
         }
-        
-        return parsedScript;
 
-    } catch (error) {
-        if (error instanceof SyntaxError) {
-             console.error("Failed to parse JSON from AI response:", rawResponseText);
-        }
-        console.error("Error generating script:", error);
-        throw new Error("Failed to generate script from Gemini API.");
+        return JSON.parse(response.text);
+    } catch (error: any) {
+        console.error("Script generation error:", error);
+        throw error;
     }
 };
 
-export const findVideo = async (prompt: string): Promise<{ videoUrl: string, thumbnailUrl: string }> => {
-    // The Pixabay API has a 100 character limit for the search query.
-    // Truncate the prompt to avoid a "400 Bad Request" error.
-    const truncatedPrompt = prompt.substring(0, 99);
-    const url = `https://pixabay.com/api/videos/?key=${PIXABAY_API_KEY}&q=${encodeURIComponent(truncatedPrompt)}&video_type=film&safesearch=true&per_page=5`;
+const findVideoFromPixabay = async (prompt: string, orientation: 'horizontal' | 'vertical') => {
+    const url = `https://pixabay.com/api/videos/?key=${PIXABAY_API_KEY}&q=${encodeURIComponent(prompt.substring(0, 90))}&video_type=film&orientation=${orientation}&safesearch=true&per_page=3`;
+    const response = await fetch(url);
+    const data = await response.json();
+    if (data.hits && data.hits.length > 0) {
+        const v = data.hits[0];
+        return { 
+            videoUrl: v.videos.medium.url, 
+            thumbnailUrl: v.videos.medium.thumbnail,
+            quality: 'medium'
+        };
+    }
+    return null;
+};
+
+const findVideoFromPexels = async (prompt: string, orientation: 'horizontal' | 'vertical') => {
+    const pexelsOrientation = orientation === 'horizontal' ? 'landscape' : 'portrait';
+    const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(prompt.substring(0, 90))}&per_page=3&orientation=${pexelsOrientation}&size=medium`;
     
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Pixabay API request failed with status ${response.status}`);
+    const response = await fetch(url, {
+        headers: {
+            'Authorization': PEXELS_API_KEY
         }
-        const data = await response.json();
-        if (data.hits && data.hits.length > 0) {
-            const video = data.hits[0];
-            const videoFile = video.videos.medium || video.videos.large || video.videos.small;
-            
-            if (!videoFile) {
-                 throw new Error("No suitable video format found.");
-            }
-            
-            return {
-                videoUrl: videoFile.url,
-                thumbnailUrl: videoFile.thumbnail,
-            };
-        } else {
-            // Fallback: try a broader search if the specific one fails
-            // Simple logic: Take the first word (likely the subject) and maybe the last word (likely the context)?
-            // Or just the first 2 words.
-            const shorterPrompt = prompt.split(' ').slice(0, 2).join(' ');
-            if (shorterPrompt && shorterPrompt !== prompt && shorterPrompt.length > 2) {
-                const fallbackUrl = `https://pixabay.com/api/videos/?key=${PIXABAY_API_KEY}&q=${encodeURIComponent(shorterPrompt)}&video_type=film&safesearch=true&per_page=3`;
-                const fallbackResponse = await fetch(fallbackUrl);
-                if (fallbackResponse.ok) {
-                    const fallbackData = await fallbackResponse.json();
-                    if (fallbackData.hits && fallbackData.hits.length > 0) {
-                        const video = fallbackData.hits[0];
-                        const videoFile = video.videos.medium || video.videos.large || video.videos.small;
-                        if (videoFile) {
-                            return { videoUrl: videoFile.url, thumbnailUrl: videoFile.thumbnail };
-                        }
-                    }
-                }
-            }
-            throw new Error("No videos found for the prompt.");
-        }
-    } catch (error) {
-        console.error("Error finding video from Pixabay:", error);
-        throw new Error("Failed to find video from Pixabay API.");
+    });
+    
+    const data = await response.json();
+    if (data.videos && data.videos.length > 0) {
+        const v = data.videos[0];
+        // Find a suitable medium file, usually indexed 0 or filtered by quality
+        const videoFile = v.video_files.find((f: any) => f.quality === 'hd') || v.video_files[0];
+        return {
+            videoUrl: videoFile.link,
+            thumbnailUrl: v.image,
+            quality: videoFile.quality
+        };
     }
+    return null;
 };
+
+export const findVideo = async (
+    prompt: string, 
+    orientation: 'horizontal' | 'vertical' = 'horizontal',
+    provider: VideoProvider = 'both'
+): Promise<{ videoUrl: string, thumbnailUrl: string }> => {
+    
+    const tasks: Promise<any>[] = [];
+    
+    if (provider === 'pixabay' || provider === 'both') {
+        tasks.push(findVideoFromPixabay(prompt, orientation).catch(() => null));
+    }
+    if (provider === 'pexels' || provider === 'both') {
+        tasks.push(findVideoFromPexels(prompt, orientation).catch(() => null));
+    }
+
+    const results = await Promise.all(tasks);
+    const validResults = results.filter(r => r !== null);
+
+    if (validResults.length === 0) {
+        throw new Error("No video found for prompt: " + prompt);
+    }
+
+    // Sort by quality preference (hd > medium) or just take the first if both same
+    validResults.sort((a, b) => {
+        if (a.quality === 'hd' && b.quality !== 'hd') return -1;
+        if (a.quality !== 'hd' && b.quality === 'hd') return 1;
+        return 0;
+    });
+
+    return { 
+        videoUrl: validResults[0].videoUrl, 
+        thumbnailUrl: validResults[0].thumbnailUrl 
+    };
+};
+
+export function decodeBase64(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+export async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number = 24000,
+  numChannels: number = 1,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
+}

@@ -1,174 +1,247 @@
 
-import type { Scene } from '../types';
+import type { Scene, VideoFormat } from '../types';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { decodeBase64, decodeAudioData } from './geminiService';
+
+let ffmpeg: FFmpeg | null = null;
+
+const loadFFmpeg = async () => {
+    if (ffmpeg) return ffmpeg;
+    ffmpeg = new FFmpeg();
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    await ffmpeg.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
+    return ffmpeg;
+};
 
 export const renderVideo = async (
     scenes: Scene[],
+    format: VideoFormat,
     musicUrl: string,
     musicVolume: number,
+    showSubtitles: boolean,
+    showProgressBar: boolean,
     onProgress: (progress: number) => void
 ): Promise<Blob> => {
     return new Promise(async (resolve, reject) => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        // Set HD Resolution
-        const WIDTH = 1280;
-        const HEIGHT = 720;
+        const WIDTH = format === 'landscape' ? 1280 : 720;
+        const HEIGHT = format === 'landscape' ? 720 : 1280;
         canvas.width = WIDTH;
         canvas.height = HEIGHT;
 
-        if (!ctx) {
-            reject(new Error("Could not create canvas context"));
-            return;
-        }
+        if (!ctx) return reject(new Error("Canvas error"));
 
-        // Setup Audio Context for Background Music mixing
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
         const destNode = audioCtx.createMediaStreamDestination();
-        let bgMusicSource: MediaElementAudioSourceNode | null = null;
-        let bgMusicEl: HTMLAudioElement | null = null;
+        
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 128;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyser.connect(destNode);
 
+        let bgMusicEl: HTMLAudioElement | null = null;
         if (musicUrl) {
             bgMusicEl = new Audio(musicUrl);
             bgMusicEl.crossOrigin = "anonymous";
             bgMusicEl.loop = true;
             bgMusicEl.volume = musicVolume;
-            try {
-                // Ensure audio allows cross origin processing
-                bgMusicSource = audioCtx.createMediaElementSource(bgMusicEl);
-                bgMusicSource.connect(destNode);
-                bgMusicSource.connect(audioCtx.destination); // Also play to speakers so user hears it? Maybe mute for rendering.
-            } catch (e) {
-                console.warn("Could not connect audio source (CORS likely)", e);
-            }
+            const source = audioCtx.createMediaElementSource(bgMusicEl);
+            source.connect(analyser);
         }
 
-        // Prepare MediaRecorder
-        const canvasStream = canvas.captureStream(30); // 30 FPS
-        
-        // Add Audio Track if exists
+        const stream = canvas.captureStream(30);
         if (destNode.stream.getAudioTracks().length > 0) {
-            canvasStream.addTrack(destNode.stream.getAudioTracks()[0]);
+            stream.addTrack(destNode.stream.getAudioTracks()[0]);
         }
 
-        const mimeTypes = [
-            'video/mp4; codecs="avc1.424028, mp4a.40.2"',
-            'video/webm; codecs=vp9',
-            'video/webm'
-        ];
-        
-        let selectedMimeType = '';
-        for (const type of mimeTypes) {
-            if (MediaRecorder.isTypeSupported(type)) {
-                selectedMimeType = type;
-                break;
-            }
-        }
-
-        if (!selectedMimeType) {
-            reject(new Error("Trình duyệt không hỗ trợ ghi hình video (MediaRecorder)."));
-            return;
-        }
-
-        const recorder = new MediaRecorder(canvasStream, {
-            mimeType: selectedMimeType,
-            videoBitsPerSecond: 2500000 // 2.5 Mbps
-        });
-
+        const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
         const chunks: Blob[] = [];
-        recorder.ondataavailable = (e) => {
-            if (e.data.size > 0) chunks.push(e.data);
-        };
-
-        recorder.onstop = () => {
-            const blob = new Blob(chunks, { type: selectedMimeType });
-            // Cleanup
-            if (bgMusicEl) {
-                bgMusicEl.pause();
-                bgMusicEl.src = "";
+        recorder.ondataavailable = e => chunks.push(e.data);
+        
+        recorder.onstop = async () => {
+            const webmBlob = new Blob(chunks, { type: 'video/webm' });
+            onProgress(95);
+            try {
+                const ff = await loadFFmpeg();
+                await ff.writeFile('input.webm', await fetchFile(webmBlob));
+                await ff.exec(['-i', 'input.webm', '-c:v', 'copy', '-c:a', 'libopus', 'output.mp4']);
+                const data = await ff.readFile('output.mp4');
+                onProgress(100);
+                resolve(new Blob([data], { type: 'video/mp4' }));
+            } catch (err) {
+                resolve(webmBlob);
             }
-            audioCtx.close();
-            resolve(blob);
         };
 
         recorder.start();
-        if (bgMusicEl) bgMusicEl.play().catch(e => console.warn("Auto-play blocked for render", e));
+        if (bgMusicEl) bgMusicEl.play().catch(() => {});
 
-        // Helper to draw video to canvas
         const videoEl = document.createElement('video');
         videoEl.crossOrigin = "anonymous";
-        videoEl.muted = true; // Video tracks are visual only
-        videoEl.playsInline = true;
+        videoEl.muted = true;
         
-        // Calculate total estimated duration for progress
-        // Estimate: 5 seconds per scene + extra for long text? 
-        // For simplicity, let's use a fixed duration calculation or just scene count.
-        const totalScenes = scenes.length;
+        // Split text into 2 lines for better layout and safe zone
+        const wrapToTwoLines = (text: string, maxWidth: number) => {
+            const words = text.split(' ');
+            const mid = Math.floor(words.length / 2);
+            let line1 = words.slice(0, mid).join(' ');
+            let line2 = words.slice(mid).join(' ');
+            
+            // Basic check if it exceeds width, but for subtitles we usually prefer 
+            // a balanced 2-line split even if 1 line fits.
+            return [line1, line2].filter(l => l.length > 0);
+        };
 
-        try {
-            for (let i = 0; i < totalScenes; i++) {
-                const scene = scenes[i];
-                if (!scene.videoUrl) continue;
+        const drawProgressiveSubtitles = (lines: string[], centerX: number, baseY: number, totalProgress: number) => {
+            const fontSize = format === 'landscape' ? 40 : 46;
+            const lineHeight = fontSize * 1.3;
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
 
-                onProgress(Math.round((i / totalScenes) * 100));
+            const totalChars = lines.join(' ').length;
+            let processedChars = 0;
 
-                await new Promise<void>((resolveScene, rejectScene) => {
-                    videoEl.src = scene.videoUrl!;
+            lines.forEach((line, index) => {
+                const y = baseY + (index * lineHeight);
+                const lineLen = line.length;
+                
+                // Calculate line-specific progress based on global progress
+                // progress = (currentPos - startPos) / lineLen
+                const lineStartPercent = processedChars / totalChars;
+                const lineEndPercent = (processedChars + lineLen) / totalChars;
+                
+                let lineProgress = 0;
+                if (totalProgress >= lineEndPercent) {
+                    lineProgress = 1;
+                } else if (totalProgress <= lineStartPercent) {
+                    lineProgress = 0;
+                } else {
+                    lineProgress = (totalProgress - lineStartPercent) / (lineEndPercent - lineStartPercent);
+                }
+
+                // 1. Draw Shadow/Base
+                ctx.shadowBlur = 6;
+                ctx.shadowColor = "rgba(0,0,0,1)";
+                ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+                ctx.fillText(line, centerX, y);
+
+                // 2. Draw Highlight (Gold)
+                ctx.save();
+                const textWidth = ctx.measureText(line).width;
+                const startX = centerX - textWidth / 2;
+                const clipWidth = textWidth * lineProgress;
+                
+                ctx.beginPath();
+                ctx.rect(startX, y - fontSize, clipWidth, fontSize * 2);
+                ctx.clip();
+                
+                ctx.fillStyle = "#FFD700"; // Gold
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = "rgba(255, 215, 0, 0.7)";
+                ctx.fillText(line, centerX, y);
+                ctx.restore();
+
+                processedChars += lineLen + 1; // +1 for space/break
+            });
+        };
+
+        for (let i = 0; i < scenes.length; i++) {
+            const scene = scenes[i];
+            if (!scene.videoUrl || !scene.audioData) continue;
+            onProgress(Math.round((i / scenes.length) * 90));
+
+            const decodedData = decodeBase64(scene.audioData);
+            const audioBuffer = await decodeAudioData(decodedData, audioCtx, 24000);
+            const subtitleLines = wrapToTwoLines(scene.scene_text_vietnamese, WIDTH * 0.8);
+            
+            await new Promise<void>((res) => {
+                videoEl.src = scene.videoUrl!;
+                videoEl.onloadeddata = () => {
+                    videoEl.play();
                     
-                    // Logic to determine scene duration
-                    // Standard heuristic: 0.4 seconds per word for reading speed
-                    const wordCount = scene.scene_text_vietnamese.split(' ').length;
-                    const sceneDuration = Math.max(5000, wordCount * 400); // Min 5 seconds
+                    const voiceSource = audioCtx.createBufferSource();
+                    voiceSource.buffer = audioBuffer;
+                    voiceSource.connect(analyser);
                     
-                    videoEl.onloadeddata = () => {
-                        videoEl.play();
-                        
-                        const startTime = Date.now();
-                        
-                        const drawFrame = () => {
-                            if (Date.now() - startTime >= sceneDuration) {
-                                resolveScene();
-                                return;
-                            }
+                    const duration = audioBuffer.duration;
+                    const startTime = Date.now();
+                    
+                    voiceSource.onended = () => res();
+                    voiceSource.start();
 
-                            // Center crop logic (cover)
-                            const hRatio = canvas.width / videoEl.videoWidth;
-                            const vRatio = canvas.height / videoEl.videoHeight;
-                            const ratio = Math.max(hRatio, vRatio);
-                            const centerShift_x = (canvas.width - videoEl.videoWidth * ratio) / 2;
-                            const centerShift_y = (canvas.height - videoEl.videoHeight * ratio) / 2;
+                    const draw = () => {
+                        const elapsed = Date.now() - startTime;
+                        if (elapsed >= duration * 1000) return;
 
-                            ctx.clearRect(0, 0, canvas.width, canvas.height);
-                            ctx.drawImage(
-                                videoEl, 
-                                0, 0, videoEl.videoWidth, videoEl.videoHeight,
-                                centerShift_x, centerShift_y, videoEl.videoWidth * ratio, videoEl.videoHeight * ratio
-                            );
+                        const sceneProgress = Math.min(elapsed / (duration * 1000), 1);
+
+                        // 1. Draw Background Video
+                        const ratio = Math.max(canvas.width / videoEl.videoWidth, canvas.height / videoEl.videoHeight);
+                        const w = videoEl.videoWidth * ratio;
+                        const h = videoEl.videoHeight * ratio;
+                        ctx.drawImage(videoEl, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+
+                        // 2. Dark Overlay & Vignette
+                        ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+                        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                        const vignette = ctx.createRadialGradient(WIDTH / 2, HEIGHT / 2, 0, WIDTH / 2, HEIGHT / 2, WIDTH * 0.8);
+                        vignette.addColorStop(0, "transparent");
+                        vignette.addColorStop(1, "rgba(0, 0, 0, 0.6)");
+                        ctx.fillStyle = vignette;
+                        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                        // 3. Symmetrical Visualizer
+                        analyser.getByteFrequencyData(dataArray);
+                        const barWidth = (WIDTH / bufferLength) * 2;
+                        let barHeight;
+                        let bx = 0;
+                        ctx.save();
+                        ctx.shadowBlur = 15;
+                        ctx.shadowColor = "rgba(255, 255, 200, 0.4)";
+                        ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+                        for (let j = 0; j < bufferLength; j++) {
+                            barHeight = (dataArray[j] / 255) * (HEIGHT * 0.1);
+                            // Symmetrical around bottom-center
+                            ctx.fillRect(WIDTH / 2 + bx, HEIGHT - 50 - barHeight, barWidth - 2, barHeight);
+                            ctx.fillRect(WIDTH / 2 - bx - barWidth, HEIGHT - 50 - barHeight, barWidth - 2, barHeight);
+                            bx += barWidth;
+                        }
+                        ctx.restore();
+
+                        // 4. Subtitles in Safe Zone
+                        // Vertical Safe Zone: center around 65% - 75% height to avoid TikTok/Reels UI
+                        // Landscape Safe Zone: center around 80% height
+                        if (showSubtitles) {
+                            const safeZoneY = format === 'vertical' ? HEIGHT * 0.65 : HEIGHT * 0.75;
+                            // Draw background plate for legibility
+                            ctx.fillStyle = "rgba(0,0,0,0.5)";
+                            const plateHeight = format === 'vertical' ? 180 : 140;
+                            ctx.fillRect(0, safeZoneY - 40, WIDTH, plateHeight);
                             
-                            // Optional: Add Text Overlay (Subtitles)
-                            // ctx.font = "24px Arial";
-                            // ctx.fillStyle = "white";
-                            // ctx.textAlign = "center";
-                            // ctx.fillText(scene.scene_text_vietnamese, canvas.width/2, canvas.height - 50);
+                            drawProgressiveSubtitles(subtitleLines, WIDTH / 2, safeZoneY, sceneProgress);
+                        }
 
-                            if (i === totalScenes - 1 && Date.now() - startTime >= sceneDuration - 50) {
-                                // Close to end of last scene
-                            } else {
-                                requestAnimationFrame(drawFrame);
-                            }
-                        };
-                        drawFrame();
+                        // 5. Progress Bar
+                        if (showProgressBar) {
+                            ctx.fillStyle = "rgba(255,255,255,0.2)";
+                            ctx.fillRect(0, HEIGHT - 4, WIDTH, 4);
+                            ctx.fillStyle = format === 'vertical' ? "#ff0066" : "#4f46e5";
+                            ctx.fillRect(0, HEIGHT - 4, WIDTH * sceneProgress, 4);
+                        }
+                        requestAnimationFrame(draw);
                     };
-                    
-                    videoEl.onerror = (e) => {
-                        console.error(`Error loading video for scene ${i}`, e);
-                        resolveScene(); // Skip bad video but keep going
-                    };
-                });
-            }
-        } catch (err) {
-            reject(err);
-        } finally {
-            recorder.stop();
+                    draw();
+                };
+            });
         }
+        recorder.stop();
+        if (bgMusicEl) bgMusicEl.pause();
     });
 };
