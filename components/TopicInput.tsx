@@ -23,16 +23,21 @@ const TopicInput: React.FC<TopicInputProps> = ({ onSubmit, isLoading, error }) =
   };
 
   if (isLoading) {
-    return <Loader text={mode === 'topic' ? "AI đang sáng tạo kịch bản, vui lòng chờ..." : "AI đang phân tích kịch bản và tìm video..."} />;
+    return <Loader text={mode === 'topic' ? "Research Agent đang phân tích cảm xúc và tạo kịch bản cinematic..." : "AI đang tối ưu hóa kịch bản cho video động lực..."} />;
   }
 
   return (
     <div className="animate-fade-in">
-      <h2 className="text-2xl font-bold text-center text-slate-100">Bắt đầu tạo Video của bạn</h2>
-      <p className="mt-2 text-center text-slate-400">Chọn phương thức, định dạng và nguồn video bên dưới.</p>
+      <div className="flex justify-center mb-2">
+        <span className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 animate-pulse">
+            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd"/></svg>
+            AI VIDEO RESEARCH AGENT ACTIVE
+        </span>
+      </div>
+      <h2 className="text-2xl font-bold text-center text-slate-100">Kiến tạo Video Động lực & Truyền cảm hứng</h2>
+      <p className="mt-2 text-center text-slate-400">Hệ thống sẽ tự động ưu tiên các cảnh quay Cinematic và hùng vĩ.</p>
       
       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Creation Mode Toggle */}
         <div className="flex flex-col items-center">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 text-center">Phương thức</span>
             <div className="bg-slate-900 p-1 rounded-lg flex w-full">
@@ -57,7 +62,6 @@ const TopicInput: React.FC<TopicInputProps> = ({ onSubmit, isLoading, error }) =
             </div>
         </div>
 
-        {/* Format Selection Toggle */}
         <div className="flex flex-col items-center">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 text-center">Định dạng Video</span>
             <div className="bg-slate-900 p-1 rounded-lg flex w-full gap-1">
@@ -84,7 +88,6 @@ const TopicInput: React.FC<TopicInputProps> = ({ onSubmit, isLoading, error }) =
             </div>
         </div>
 
-        {/* Video Source Selection */}
         <div className="flex flex-col items-center">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 text-center">Nguồn Video Stock</span>
             <div className="bg-slate-900 p-1 rounded-lg flex w-full gap-1">
@@ -122,17 +125,16 @@ const TopicInput: React.FC<TopicInputProps> = ({ onSubmit, isLoading, error }) =
       <form onSubmit={handleSubmit} className="mt-8 space-y-6">
         <div>
            <label htmlFor="contentInput" className="block text-sm font-medium text-slate-300 mb-2">
-            {mode === 'topic' ? 'Chủ đề hoặc Tóm tắt sách' : 'Nội dung Kịch bản Chi tiết'}
+            {mode === 'topic' ? 'Chủ đề hoặc Tóm tắt nội dung' : 'Nội dung Kịch bản Chi tiết'}
            </label>
            <textarea
             id="contentInput"
             value={input}
-            // Fix: Cast e.target to access value
             onChange={(e) => setInput((e.target as HTMLTextAreaElement).value)}
             placeholder={
                 mode === 'topic' 
-                ? "Ví dụ: Tóm tắt sách 'Đắc Nhân Tâm' của Dale Carnegie..." 
-                : "Dán toàn bộ nội dung kịch bản lời bình của bạn vào đây..."
+                ? "Ví dụ: Tóm tắt bài học về sự kiên trì từ vĩ nhân..." 
+                : "Dán nội dung kịch bản truyền cảm hứng của bạn..."
             }
             className="w-full h-48 p-4 bg-slate-900 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors duration-200 resize-none text-slate-200 placeholder-slate-500 shadow-inner"
             required
@@ -149,7 +151,7 @@ const TopicInput: React.FC<TopicInputProps> = ({ onSubmit, isLoading, error }) =
                 format === 'landscape' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-pink-600 hover:bg-pink-700'
             }`}
             >
-             {mode === 'topic' ? 'Bắt đầu Sáng tạo Video' : 'Xử lý Kịch bản & Tìm Video'}
+             {mode === 'topic' ? 'Khởi tạo hành trình AI' : 'Xử lý & Tìm tài nguyên Cinematic'}
             </button>
         </div>
       </form>

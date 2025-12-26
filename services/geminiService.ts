@@ -26,15 +26,27 @@ const SCRIPT_RESPONSE_SCHEMA = {
     required: ["title", "author", "scenes"]
 };
 
+// Đóng vai AI Video Research Agent cho video động lực
+const SYSTEM_INSTRUCTION = `Bạn là AI Video Research Agent cho video truyền cảm hứng - động lực.
+Nhiệm vụ: Tạo kịch bản và BỔ SUNG các cảnh video có giá trị cảm xúc CAO, mang tính biểu tượng, truyền cảm hứng mạnh.
+Ưu tiên các nhóm hình ảnh:
+1. Thiên nhiên hùng vĩ (núi cao, mây trôi, bình minh, đại dương).
+2. Vũ trụ (ngân hà, trái đất từ không gian, sự vô hạn).
+3. Hành trình cá nhân (bóng người đơn độc, người đứng trên đỉnh núi, suy tư).
+4. Hành động vượt khó (chạy bộ bình minh, tập luyện im lặng, vấp ngã đứng dậy).
+5. Ánh sáng hy vọng (ánh nắng xuyên bóng tối, cửa mở ra ánh sáng).
+Yêu cầu image_prompt_english: Tập trung vào Cinematic, Slow motion, Epic, 4k, no text, wide shot.`;
+
 export const generateScript = async (input: string, mode: 'topic' | 'script' = 'topic'): Promise<{ title: string; author: string; scenes: Omit<Scene, 'id'>[] }> => {
-    // Fix: Use process.env.API_KEY directly for initialization
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
     let prompt = "";
     if (mode === 'topic') {
-        prompt = `Dựa trên chủ đề sau, tạo kịch bản video tiếng Việt. Phân chia rõ ràng AI/Người kể chuyện hoặc Nhân vật đối thoại nếu có. 
+        prompt = `${SYSTEM_INSTRUCTION}
+        Dựa trên chủ đề sau, tạo kịch bản video tiếng Việt. Phân chia rõ ràng AI/Người kể chuyện hoặc Nhân vật đối thoại nếu có. 
         Trả về JSON: title, author, scenes (character, scene_text_vietnamese, image_prompt_english). Chủ đề: "${input}"`;
     } else {
-        prompt = `Chuyển kịch bản sau sang JSON chuyên nghiệp. Phân loại người nói vào trường 'character'.
+        prompt = `${SYSTEM_INSTRUCTION}
+        Chuyển kịch bản sau sang JSON chuyên nghiệp. Phân loại người nói vào trường 'character'.
         Nội dung: "${input}"`;
     }
 
@@ -60,7 +72,9 @@ export const generateScript = async (input: string, mode: 'topic' | 'script' = '
 };
 
 const findVideoFromPixabay = async (prompt: string, orientation: 'horizontal' | 'vertical') => {
-    const url = `https://pixabay.com/api/videos/?key=${PIXABAY_API_KEY}&q=${encodeURIComponent(prompt.substring(0, 90))}&video_type=film&orientation=${orientation}&safesearch=true&per_page=3`;
+    // Agent Logic: Làm giàu prompt để tìm kết quả chất lượng hơn
+    const enrichedPrompt = `${prompt} cinematic epic landscape`.substring(0, 90);
+    const url = `https://pixabay.com/api/videos/?key=${PIXABAY_API_KEY}&q=${encodeURIComponent(enrichedPrompt)}&video_type=film&orientation=${orientation}&safesearch=true&per_page=3`;
     const response = await fetch(url);
     const data = await response.json();
     if (data.hits && data.hits.length > 0) {
@@ -75,8 +89,10 @@ const findVideoFromPixabay = async (prompt: string, orientation: 'horizontal' | 
 };
 
 const findVideoFromPexels = async (prompt: string, orientation: 'horizontal' | 'vertical') => {
+    // Agent Logic: Thêm các tính từ cinematic cho Pexels
+    const enrichedPrompt = `${prompt} cinematic slow motion`.substring(0, 90);
     const pexelsOrientation = orientation === 'horizontal' ? 'landscape' : 'portrait';
-    const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(prompt.substring(0, 90))}&per_page=3&orientation=${pexelsOrientation}&size=medium`;
+    const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(enrichedPrompt)}&per_page=3&orientation=${pexelsOrientation}&size=medium`;
     
     const response = await fetch(url, {
         headers: {
@@ -87,7 +103,6 @@ const findVideoFromPexels = async (prompt: string, orientation: 'horizontal' | '
     const data = await response.json();
     if (data.videos && data.videos.length > 0) {
         const v = data.videos[0];
-        // Find a suitable medium file, usually indexed 0 or filtered by quality
         const videoFile = v.video_files.find((f: any) => f.quality === 'hd') || v.video_files[0];
         return {
             videoUrl: videoFile.link,
@@ -120,7 +135,6 @@ export const findVideo = async (
         throw new Error("No video found for prompt: " + prompt);
     }
 
-    // Sort by quality preference (hd > medium) or just take the first if both same
     validResults.sort((a, b) => {
         if (a.quality === 'hd' && b.quality !== 'hd') return -1;
         if (a.quality !== 'hd' && b.quality === 'hd') return 1;
@@ -143,7 +157,6 @@ export function decodeBase64(base64: string): Uint8Array {
   return bytes;
 }
 
-// Fix: Use any for missing AudioContext and AudioBuffer types in restricted environment
 export async function decodeAudioData(
   data: Uint8Array,
   ctx: any,

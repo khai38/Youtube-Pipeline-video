@@ -4,14 +4,48 @@ import { decodeBase64, decodeAudioData } from "./geminiService";
 import type { VoiceOption, VoiceSettings } from "../types";
 
 export const CHIRP_VOICES: VoiceOption[] = [
-  { id: 'Kore', name: 'Kore HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ trang trọng, sắc nét, âm tầng cao.', sampleRate: '24kHz' },
-  { id: 'Puck', name: 'Puck HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam trẻ trung, năng động, nhịp điệu nhanh.', sampleRate: '24kHz' },
-  { id: 'Charon', name: 'Charon Studio', gender: 'male', type: 'Studio', description: 'Giọng nam trầm ấm, chiều sâu tốt, phù hợp kể chuyện.', sampleRate: '24kHz' },
+  // Premium Vietnamese Chirp3-HD Voices
+  { id: 'vi-VN-Chirp3-HD-Achernar', name: 'Achernar HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, sắc nét và chuyên nghiệp.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Achird', name: 'Achird HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, trầm ấm, độ chi tiết cao.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Algenib', name: 'Algenib HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, năng động và hiện đại.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Algieba', name: 'Algieba HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, uy lực và quyết đoán.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Alnilam', name: 'Alnilam HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, điềm tĩnh và tin cậy.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Aoede', name: 'Aoede HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, nhẹ nhàng và truyền cảm.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Autonoe', name: 'Autonoe HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, trong trẻo và thanh thoát.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Callirrhoe', name: 'Callirrhoe HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, sâu lắng và tinh tế.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Charon', name: 'Charon HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, lý tưởng cho kể chuyện Studio.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Despina', name: 'Despina HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, trẻ trung và linh hoạt.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Enceladus', name: 'Enceladus HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, mạnh mẽ và vang dội.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Erinome', name: 'Erinome HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, ấm áp và gần gũi.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Fenrir', name: 'Fenrir HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, sắc sảo và hiện đại.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Gacrux', name: 'Gacrux HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, sang trọng và quý phái.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Iapetus', name: 'Iapetus HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, trầm mặc và sâu sắc.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Kore', name: 'Kore HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium phổ biến, cân bằng tuyệt vời.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Laomedeia', name: 'Laomedeia HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, dịu dàng và êm ái.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Leda', name: 'Leda HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, mượt mà và tự nhiên.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Orus', name: 'Orus HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, trung tính và rõ ràng.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Puck', name: 'Puck HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, năng động, nhịp điệu nhanh.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Pulcherrima', name: 'Pulcherrima HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, lôi cuốn và đầy năng lượng.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Rasalgethi', name: 'Rasalgethi HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, nghiêm túc và chuyên gia.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Sadachbia', name: 'Sadachbia HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, ổn định và mạch lạc.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Sadaltager', name: 'Sadaltager HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, nam tính và ấm nồng.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Schedar', name: 'Schedar HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, truyền thống và vững chãi.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Sulafat', name: 'Sulafat HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, tinh khiết và rõ nét.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Umbriel', name: 'Umbriel HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam Premium, huyền bí và cuốn hút.', sampleRate: '24kHz' },
+  { id: 'vi-VN-Chirp3-HD-Vindemiatrix', name: 'Vindemiatrix HD', gender: 'female', type: 'Chirp 3: HD', description: 'Giọng nữ Premium, tự tin và hiện đại.', sampleRate: '24kHz' },
+  
+  // Studio Voices (Legacy/Alternative)
   { id: 'Zephyr', name: 'Zephyr Studio', gender: 'female', type: 'Studio', description: 'Giọng nữ nhẹ nhàng, trong trẻo, phù hợp review phim.', sampleRate: '24kHz' },
-  { id: 'Fenrir', name: 'Fenrir HD', gender: 'male', type: 'Chirp 3: HD', description: 'Giọng nam mạnh mẽ, uy lực, phù hợp tin tức.', sampleRate: '24kHz' },
 ];
 
 export const VOICE_STYLES = [
+  // New "Real-Mic" Styles
+  { id: 'studio_mic', label: 'Studio Micro (Pro)', instruction: 'professional studio voice-over recorded with a condenser microphone, clear natural human cadence, subtle audible breathing, rich mid-range tones' },
+  { id: 'podcast_close', label: 'Podcast (Thân mật)', instruction: 'close-mic podcast style, intimate and warm, very natural conversational tone with soft pauses and realistic human breath work' },
+  { id: 'home_raw', label: 'Giọng Mộc (Home Mic)', instruction: 'authentic home recording style using a USB microphone, slightly less processed, organic room presence, very honest and non-robotic' },
+  { id: 'cinematic_mic', label: 'Truyền Lửa (Cinematic)', instruction: 'epic cinematic narration recorded through a high-end studio mic, slow dramatic pace, deep emotional resonance, clear intentional breaths' },
+  
+  // Existing Styles
   { id: 'inspirational', label: 'Động lực truyền cảm', instruction: 'inspirational and motivational' },
   { id: 'deep', label: 'Trầm ấm, sâu lắng', instruction: 'warm, deep, and reflective' },
   { id: 'expert', label: 'Bình tĩnh, chuyên gia', instruction: 'calm, authoritative, and professional' },
@@ -28,13 +62,11 @@ const audioCache = new Map<string, string>();
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const generateChirpAudio = async (text: string, settings: VoiceSettings, retryCount = 0): Promise<string> => {
-  // Fix: Use process.env.API_KEY directly
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   
   const speedText = settings.speed > 1.2 ? "nhanh" : settings.speed < 0.8 ? "chậm" : "bình thường";
   const pitchText = settings.pitch > 1.1 ? "cao" : settings.pitch < 0.9 ? "trầm" : "vừa phải";
   
-  // Map selected style IDs to their English instructions
   const selectedStyles = settings.styles || [];
   const styleInstructions = VOICE_STYLES
     .filter(s => selectedStyles.includes(s.id))
@@ -42,7 +74,12 @@ export const generateChirpAudio = async (text: string, settings: VoiceSettings, 
     .join(', ');
 
   const stylePart = styleInstructions ? `Style: ${styleInstructions}. ` : "";
-  const formattedPrompt = `(Voice: ${settings.voiceId}, Speed: ${speedText}, Pitch: ${pitchText}. ${stylePart}) Say: ${text}`;
+  const formattedPrompt = `(Voice: ${settings.voiceId}, Speed: ${speedText}, Pitch: ${pitchText}. ${stylePart}) Say strictly in Vietnamese: ${text}`;
+
+  // Fix: Extract lowercase voice name as required by the API
+  const apiVoiceName = settings.voiceId.includes('-') 
+    ? settings.voiceId.split('-').pop()?.toLowerCase() 
+    : settings.voiceId.toLowerCase();
 
   try {
     const response = await ai.models.generateContent({
@@ -52,7 +89,7 @@ export const generateChirpAudio = async (text: string, settings: VoiceSettings, 
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: settings.voiceId },
+            prebuiltVoiceConfig: { voiceName: apiVoiceName },
           },
         },
       },
@@ -65,7 +102,6 @@ export const generateChirpAudio = async (text: string, settings: VoiceSettings, 
     const errorMsg = error?.message?.toLowerCase() || "";
     if (errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('resource_exhausted')) {
       if (retryCount < 5) {
-        // More aggressive backoff for quota errors
         const waitTime = Math.pow(2, retryCount) * 3000 + Math.random() * 1000;
         console.warn(`Quota exceeded. Waiting ${Math.round(waitTime/1000)}s...`);
         await delay(waitTime);
@@ -78,7 +114,6 @@ export const generateChirpAudio = async (text: string, settings: VoiceSettings, 
   }
 };
 
-// Fix: Use any for AudioContext and return type in restricted environment
 export const playVoicePreview = async (voiceId: string, audioCtx: any): Promise<any> => {
   let base64 = audioCache.get(voiceId);
   

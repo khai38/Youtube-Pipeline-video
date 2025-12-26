@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { Scene, VideoFormat, VideoDetails } from '../types';
+import type { Scene, VideoFormat, VideoDetails, OverlayMode, TransitionType } from '../types';
 import { decodeBase64, decodeAudioData } from '../services/geminiService';
 import SoundWave from './SoundWave';
 
@@ -22,10 +22,9 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [sceneTransition, setSceneTransition] = useState<TransitionType>('none');
   const [musicFileName, setMusicFileName] = useState<string>("");
   
-  // Fix: Use any for restricted environment types
   const audioCtxRef = useRef<any>(null);
   const analyserRef = useRef<any>(null);
   const videoRef = useRef<any>(null);
@@ -36,10 +35,10 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
   const requestRef = useRef<number | null>(null);
   const sceneStartTimeRef = useRef<number>(0);
   const currentDurationRef = useRef<number>(0);
+  const totalTimeRef = useRef<number>(0);
 
   const initAudioCtx = () => {
       if (!audioCtxRef.current) {
-          // Fix: Access AudioContext on window via any
           const ctx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
           const analyser = ctx.createAnalyser();
           analyser.fftSize = 128;
@@ -56,15 +55,98 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
       return { ctx: audioCtxRef.current, analyser: analyserRef.current };
   };
 
-  // Fix: Use any for missing CanvasRenderingContext2D type
-  const drawProgressiveSubtitles = (ctx: any, lines: string[], centerX: number, baseY: number, totalProgress: number) => {
-    const fontSize = videoFormat === 'landscape' ? 36 : 42;
-    const lineHeight = fontSize * 1.3;
-    ctx.font = `bold ${fontSize}px sans-serif`;
+  const drawRecIcon = (ctx: CanvasRenderingContext2D, time: number) => {
+    ctx.save();
+    const padding = 40;
+    const dotRadius = 10;
+    const isVisible = Math.floor(time / 500) % 2 === 0;
+    
+    if (isVisible) {
+        ctx.beginPath();
+        ctx.arc(padding + dotRadius, padding + dotRadius, dotRadius, 0, Math.PI * 2);
+        ctx.fillStyle = "#FF0000";
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = "red";
+        ctx.fill();
+    }
+    
+    ctx.font = "bold 28px monospace";
+    ctx.fillStyle = "white";
+    ctx.shadowBlur = 5;
+    ctx.shadowColor = "black";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("REC", padding + dotRadius * 2.5 + 5, padding + dotRadius);
+    ctx.restore();
+  };
+
+  const drawDust = (ctx: any, width: number, height: number, time: number) => {
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
+    for (let i = 0; i < 30; i++) {
+        const x = (Math.sin(i * 123.4 + time * 0.0001) * 0.5 + 0.5) * width;
+        const y = (Math.cos(i * 567.8 + time * 0.00015) * 0.5 + 0.5) * height;
+        const size = (Math.sin(i + time * 0.001) * 0.5 + 1) * 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+  };
+
+  const drawLightLeaks = (ctx: any, width: number, height: number, time: number) => {
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    const x = (Math.sin(time * 0.0005) * 0.5 + 0.5) * width;
+    const y = (Math.cos(time * 0.0007) * 0.5 + 0.5) * height;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, width * 0.6);
+    grad.addColorStop(0, "rgba(255, 100, 50, 0.12)");
+    grad.addColorStop(0.5, "rgba(255, 200, 100, 0.04)");
+    grad.addColorStop(1, "transparent");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+  };
+
+  const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = words[0];
+
+    for (let i = 1; i < words.length; i++) {
+        const word = words[i];
+        const width = ctx.measureText(currentLine + " " + word).width;
+        if (width < maxWidth) {
+            currentLine += " " + word;
+        } else {
+            lines.push(currentLine);
+            currentLine = word;
+        }
+    }
+    lines.push(currentLine);
+    return lines;
+  };
+
+  const drawProgressiveSubtitles = (ctx: CanvasRenderingContext2D, text: string, centerX: number, baseY: number, totalProgress: number, canvasWidth: number) => {
+    const isVertical = videoFormat === 'vertical';
+    const baseFontSize = isVertical ? 44 : 36;
+    const maxWidth = canvasWidth * 0.85;
+    
+    ctx.font = `bold ${baseFontSize}px sans-serif`;
+    let lines = wrapText(ctx, text, maxWidth);
+    
+    let fontSize = baseFontSize;
+    if (isVertical && lines.length > 2) {
+        fontSize = Math.max(30, baseFontSize - (lines.length * 2));
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        lines = wrapText(ctx, text, maxWidth);
+    }
+
+    const lineHeight = fontSize * 1.35;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    const totalChars = lines.join(' ').length;
+    const totalChars = text.length;
     let processedChars = 0;
 
     lines.forEach((line: string, index: number) => {
@@ -83,13 +165,16 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
             lineProgress = (totalProgress - lineStartPercent) / (lineEndPercent - lineStartPercent);
         }
 
-        // Base text
-        ctx.shadowBlur = 4;
-        ctx.shadowColor = "black";
-        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+        ctx.lineWidth = fontSize * 0.15;
+        ctx.strokeText(line, centerX, y);
+
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = "rgba(0,0,0,0.8)";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
         ctx.fillText(line, centerX, y);
         
-        // Highlighted text with clipping
         ctx.save();
         const textWidth = ctx.measureText(line).width;
         const startX = centerX - textWidth / 2;
@@ -100,7 +185,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
         ctx.clip();
         
         ctx.fillStyle = "#FFD700";
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = 10;
         ctx.shadowColor = "rgba(255, 215, 0, 0.6)";
         ctx.fillText(line, centerX, y);
         ctx.restore();
@@ -112,7 +197,6 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
   const drawVisualizer = () => {
     if (!overlayCanvasRef.current || !analyserRef.current || !isPlaying) return;
     
-    // Fix: Access getContext on canvas ref
     const canvas = overlayCanvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -127,53 +211,68 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // Fix: Access width/height properties on canvas ref
         const width = canvas.width;
         const height = canvas.height;
+        totalTimeRef.current += 16;
 
-        // 1. Overlays
-        ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+        const elapsed = Date.now() - sceneStartTimeRef.current;
+        const sceneProgress = Math.min(elapsed / (currentDurationRef.current * 1000), 1);
+
+        // --- Transitions ---
+        ctx.save();
+        const transDur = 500;
+        if (elapsed < transDur) {
+            const tRatio = elapsed / transDur;
+            if (sceneTransition === 'fade') ctx.globalAlpha = tRatio;
+            if (sceneTransition === 'blur') ctx.filter = `blur(${(1 - tRatio) * 15}px)`;
+        }
+
+        ctx.fillStyle = "rgba(15, 23, 42, 0.12)";
         ctx.fillRect(0, 0, width, height);
-        const vignette = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width * 0.8);
+        const vignette = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width * 0.9);
         vignette.addColorStop(0, "transparent");
-        vignette.addColorStop(1, "rgba(0, 0, 0, 0.6)");
+        vignette.addColorStop(1, "rgba(15, 23, 42, 0.35)");
         ctx.fillStyle = vignette;
         ctx.fillRect(0, 0, width, height);
+        
+        if (sceneTransition === 'flash' && elapsed < transDur) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${1 - (elapsed / transDur)})`;
+            ctx.fillRect(0, 0, width, height);
+        }
+        ctx.restore();
 
-        // 2. Equalizer
+        // --- Overlays ---
+        if (videoDetails.overlayMode === 'dust' || videoDetails.overlayMode === 'cinematic') {
+            drawDust(ctx, width, height, totalTimeRef.current);
+        }
+        if (videoDetails.overlayMode === 'lightleak' || videoDetails.overlayMode === 'cinematic') {
+            drawLightLeaks(ctx, width, height, totalTimeRef.current);
+        }
+
+        // --- REC Icon ---
+        drawRecIcon(ctx, totalTimeRef.current);
+
+        // --- Subtitles ---
+        if (videoDetails.showSubtitles && scenes[currentSceneIndex]) {
+            const text = scenes[currentSceneIndex].scene_text_vietnamese;
+            const safeZoneY = videoFormat === 'vertical' ? height * 0.68 : height * 0.78;
+            drawProgressiveSubtitles(ctx, text, width / 2, safeZoneY, sceneProgress, width);
+        }
+
+        // --- Visualizer ---
         const barWidth = (width / bufferLength) * 2;
-        let barHeight;
         let xPos = 0;
         ctx.save();
         ctx.shadowBlur = 10;
         ctx.shadowColor = "rgba(255, 255, 255, 0.4)";
-        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
         for (let i = 0; i < bufferLength; i++) {
-            barHeight = (dataArray[i] / 255) * (height * 0.12);
+            const barHeight = (dataArray[i] / 255) * (height * 0.08);
             ctx.fillRect(width / 2 + xPos, height - 30 - barHeight, barWidth - 1, barHeight);
             ctx.fillRect(width / 2 - xPos - barWidth, height - 30 - barHeight, barWidth - 1, barHeight);
             xPos += barWidth;
         }
         ctx.restore();
-
-        // 3. Subtitles in Safe Zone
-        if (videoDetails.showSubtitles && scenes[currentSceneIndex]) {
-            const elapsed = Date.now() - sceneStartTimeRef.current;
-            const progress = Math.min(elapsed / (currentDurationRef.current * 1000), 1);
-            
-            const words = scenes[currentSceneIndex].scene_text_vietnamese.split(' ');
-            const mid = Math.floor(words.length / 2);
-            const lines = [words.slice(0, mid).join(' '), words.slice(mid).join(' ')].filter(l => l.length > 0);
-
-            const safeZoneY = videoFormat === 'vertical' ? height * 0.65 : height * 0.75;
-            
-            // Background plate
-            ctx.fillStyle = "rgba(0,0,0,0.5)";
-            const plateHeight = videoFormat === 'vertical' ? 160 : 120;
-            ctx.fillRect(0, safeZoneY - 40, width, plateHeight);
-            
-            drawProgressiveSubtitles(ctx, lines, width / 2, safeZoneY, progress);
-        }
         
         requestRef.current = requestAnimationFrame(renderFrame);
     };
@@ -184,7 +283,6 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
   const stopPlayback = useCallback(() => {
     setIsPlaying(false);
     if (requestRef.current) cancelAnimationFrame(requestRef.current);
-    // Fix: Access pause on media elements via any
     videoRef.current?.pause();
     if (bgMusicRef.current) bgMusicRef.current.pause();
     if (currentVoiceSourceRef.current) {
@@ -192,7 +290,6 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
         currentVoiceSourceRef.current = null;
     }
     if (overlayCanvasRef.current) {
-        // Fix: Use any for getContext and clearing canvas
         const ctx = (overlayCanvasRef.current as any).getContext('2d');
         ctx?.clearRect(0, 0, (overlayCanvasRef.current as any).width, (overlayCanvasRef.current as any).height);
     }
@@ -210,6 +307,12 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
           currentVoiceSourceRef.current.stop();
       }
 
+      const possible: TransitionType[] = ['fade', 'zoom', 'flash', 'blur'];
+      const chosen = videoDetails.transitionType === 'random' 
+        ? possible[Math.floor(Math.random() * possible.length)]
+        : videoDetails.transitionType;
+      setSceneTransition(chosen);
+
       const decodedData = decodeBase64(scene.audioData);
       const audioBuffer = await decodeAudioData(decodedData, ctx, 24000);
       const source = ctx.createBufferSource();
@@ -221,11 +324,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
 
       source.onended = () => {
           if (index < scenes.length - 1) {
-              setIsTransitioning(true);
-              setTimeout(() => {
-                  setCurrentSceneIndex(index + 1);
-                  setIsTransitioning(false);
-              }, 100);
+              setCurrentSceneIndex(index + 1);
           } else {
               stopPlayback();
           }
@@ -233,10 +332,8 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
 
       currentVoiceSourceRef.current = source;
       source.start();
-      // Fix: Access play on videoRef via any
       (videoRef.current as any)?.play().catch(() => {});
       if (bgMusicRef.current) {
-          // Fix: Access volume and play on bgMusicRef via any
           (bgMusicRef.current as any).volume = videoDetails.musicVolume;
           (bgMusicRef.current as any).play().catch(() => {});
       }
@@ -254,7 +351,6 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
 
   useEffect(() => {
       if (bgMusicRef.current) {
-          // Fix: Access volume property on bgMusicRef via any
           (bgMusicRef.current as any).volume = videoDetails.musicVolume;
       }
   }, [videoDetails.musicVolume]);
@@ -267,7 +363,6 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
   }, []);
 
   const handleMusicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Fix: Cast e.target to access files
     const file = (e.target as HTMLInputElement).files?.[0];
     if (file) {
         const url = (window as any).URL.createObjectURL(file);
@@ -287,7 +382,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
                         <video 
                             ref={videoRef}
                             src={scenes[currentSceneIndex]?.videoUrl} 
-                            className={`w-full h-full object-cover transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}
+                            className={`w-full h-full object-cover transition-transform duration-700 ${sceneTransition === 'zoom' && isPlaying ? 'scale-105' : 'scale-100'}`}
                             loop muted playsInline
                         />
                         <canvas 
@@ -307,7 +402,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
                 <div className="mt-4 flex justify-center w-full"><SoundWave isPlaying={isPlaying} /></div>
             </div>
 
-            <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 space-y-8 h-fit">
+            <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 space-y-6 h-fit overflow-y-auto max-h-[70vh] custom-scrollbar">
                 <div>
                     <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
                         <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
@@ -319,7 +414,6 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
                             <label className="text-xs font-bold text-slate-500 uppercase">Tải lên nhạc nền</label>
                             <div className="flex items-center gap-3">
                                 <button 
-                                    // Fix: Access click() on fileInputRef via any
                                     onClick={() => (fileInputRef.current as any)?.click()}
                                     className="flex-grow py-3 px-4 bg-slate-900 border-2 border-dashed border-slate-700 rounded-lg hover:border-indigo-500 transition-all flex items-center justify-center gap-2 group"
                                 >
@@ -344,11 +438,59 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
                             <input 
                                 type="range" min="0" max="1" step="0.05" 
                                 value={videoDetails.musicVolume} 
-                                // Fix: Cast e.target to access value
                                 onChange={(e) => setVideoDetails({...videoDetails, musicVolume: parseFloat((e.target as HTMLInputElement).value)})}
                                 className="w-full h-1 bg-slate-700 appearance-none accent-indigo-500 rounded-full" 
                             />
                         </div>
+                    </div>
+                </div>
+
+                <div className="pt-6 border-t border-slate-700 space-y-4">
+                    <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Chuyển cảnh (Transitions)</label>
+                    <div className="grid grid-cols-2 gap-2">
+                        {([
+                            { id: 'random', label: '✨ NGẪU NHIÊN' },
+                            { id: 'fade', label: 'Chồng mờ' },
+                            { id: 'zoom', label: 'Thu phóng' },
+                            { id: 'flash', label: 'Nháy trắng' },
+                            { id: 'blur', label: 'Mờ ảo' }
+                        ] as {id: TransitionType, label: string}[]).map(mode => (
+                            <button
+                                key={mode.id}
+                                onClick={() => setVideoDetails({...videoDetails, transitionType: mode.id})}
+                                className={`px-3 py-2 text-xs font-bold rounded-lg border transition-all ${
+                                    videoDetails.transitionType === mode.id 
+                                    ? 'bg-indigo-600 border-indigo-400 text-white shadow-indigo-500/20' 
+                                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'
+                                }`}
+                            >
+                                {mode.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="pt-6 border-t border-slate-700 space-y-4">
+                    <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Lớp phủ động (CapCut Style)</label>
+                    <div className="grid grid-cols-2 gap-2">
+                        {([
+                            { id: 'none', label: 'Không có' },
+                            { id: 'dust', label: 'Hạt bụi' },
+                            { id: 'lightleak', label: 'Ánh sáng' },
+                            { id: 'cinematic', label: 'Cinematic' }
+                        ] as {id: OverlayMode, label: string}[]).map(mode => (
+                            <button
+                                key={mode.id}
+                                onClick={() => setVideoDetails({...videoDetails, overlayMode: mode.id})}
+                                className={`px-3 py-2 text-xs font-bold rounded-lg border transition-all ${
+                                    videoDetails.overlayMode === mode.id 
+                                    ? 'bg-indigo-600 border-indigo-400 text-white' 
+                                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'
+                                }`}
+                            >
+                                {mode.label}
+                            </button>
+                        ))}
                     </div>
                 </div>
 
@@ -358,7 +500,6 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
                             <input 
                                 type="checkbox" 
                                 checked={videoDetails.showSubtitles} 
-                                // Fix: Cast e.target to access checked
                                 onChange={(e) => setVideoDetails({...videoDetails, showSubtitles: (e.target as HTMLInputElement).checked})}
                                 className="sr-only" 
                             />
@@ -368,9 +509,9 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
                         <span className="text-sm font-bold text-slate-300 group-hover:text-white transition-colors">Hiển thị Phụ đề</span>
                     </label>
 
-                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-                        <p className="text-[10px] text-red-300 leading-relaxed italic">
-                            * Phụ đề đã được căn chỉnh 2 dòng vào Vùng An Toàn (Safe Zone) giúp hiển thị tốt trên mọi thiết bị.
+                    <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
+                        <p className="text-[10px] text-indigo-300 leading-relaxed italic">
+                            * Hiệu ứng ghi hình động (.REC) được tự động thêm vào góc trái video để tăng tính chân thực.
                         </p>
                     </div>
                 </div>

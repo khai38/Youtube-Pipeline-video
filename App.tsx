@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useRef, useMemo } from 'react';
-import type { Scene, Step, SavedVideo, YouTubeUser, VideoFormat, VideoDetails, VoiceSettings, VideoProvider } from './types';
+import type { Scene, Step, SavedVideo, YouTubeUser, VideoFormat, VideoDetails, VoiceSettings, VideoProvider, OverlayMode, TransitionType } from './types';
 import { generateScript, findVideo } from './services/geminiService';
 import { generateChirpAudio } from './services/voiceService';
 import { getUserInfo, uploadVideoToYouTube } from './services/youtubeService';
@@ -31,9 +31,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Mapping of character names to their chosen voice settings
   const [characterVoices, setCharacterVoices] = useState<Record<string, VoiceSettings>>({});
-  // Track which character we are currently selecting a voice for
   const [currentVoiceStepIndex, setCurrentVoiceStepIndex] = useState(0);
 
   const [isUploading, setIsUploading] = useState(false);
@@ -45,7 +43,9 @@ const App: React.FC = () => {
 
   const [videoDetails, setVideoDetails] = useState<VideoDetails>({
     title: '', description: '', author: '', privacy: 'private', 
-    musicUrl: '', musicVolume: 0.3, showSubtitles: true, showProgressBar: true
+    musicUrl: '', musicVolume: 0.3, showSubtitles: true, showProgressBar: true,
+    overlayMode: 'cinematic',
+    transitionType: 'random' // Mặc định ngẫu nhiên hấp dẫn
   });
 
   const STEPS: { id: Step; name: string }[] = [
@@ -57,7 +57,6 @@ const App: React.FC = () => {
     { id: 'complete', name: 'Hoàn tất' }
   ];
 
-  // Get unique characters from generated scenes
   const characters = useMemo(() => {
     const set = new Set(scenes.map(s => s.character || 'Narrator'));
     return Array.from(set);
@@ -73,11 +72,10 @@ const App: React.FC = () => {
       const generatedScript = await generateScript(input, mode);
       setScenes(generatedScript.scenes.map((s, i) => ({ ...s, id: i })));
       
-      // Initialize voice settings for each character
       const initialVoices: Record<string, VoiceSettings> = {};
       const uniqueChars = Array.from(new Set(generatedScript.scenes.map(s => s.character || 'Narrator')));
       uniqueChars.forEach(char => {
-        initialVoices[char] = { voiceId: 'Kore', speed: 1.0, pitch: 1.0, volume: 1.0 };
+        initialVoices[char] = { voiceId: 'vi-VN-Chirp3-HD-Kore', speed: 1.0, pitch: 1.0, volume: 1.0 };
       });
       setCharacterVoices(initialVoices);
       setCurrentVoiceStepIndex(0);
@@ -105,13 +103,12 @@ const App: React.FC = () => {
   };
 
   const handleProcessScene = useCallback(async (sceneId: number, prompt: string, text: string) => {
-    // Luôn cập nhật image_prompt_english trong state nếu người dùng thay đổi từ khóa tìm kiếm
     setScenes(prev => prev.map(s => s.id === sceneId ? { 
         ...s, 
         image_prompt_english: prompt,
         isGeneratingVideo: true, 
         isGeneratingAudio: true,
-        videoError: false // Reset lỗi khi bắt đầu xử lý lại
+        videoError: false 
     } : s));
     
     try {
@@ -145,9 +142,9 @@ const App: React.FC = () => {
     try {
         const blob = await renderVideo(
             scenes, videoFormat, videoDetails.musicUrl, videoDetails.musicVolume,
-            videoDetails.showSubtitles, videoDetails.showProgressBar, (p) => setUploadProgress(p)
+            videoDetails.showSubtitles, videoDetails.showProgressBar, videoDetails.overlayMode, 
+            videoDetails.transitionType, (p) => setUploadProgress(p)
         );
-        // Fix: Use type assertion for URL on window and document access
         const url = (window as any).URL.createObjectURL(blob);
         const a = (globalThis as any).document.createElement('a');
         a.href = url;
@@ -179,7 +176,9 @@ const App: React.FC = () => {
     setCharacterVoices({});
     setVideoDetails({ 
         title: '', description: '', author: '', privacy: 'private', 
-        musicUrl: '', musicVolume: 0.3, showSubtitles: true, showProgressBar: true
+        musicUrl: '', musicVolume: 0.3, showSubtitles: true, showProgressBar: true,
+        overlayMode: 'cinematic',
+        transitionType: 'random'
     });
   };
 
@@ -201,7 +200,14 @@ const App: React.FC = () => {
                         onBack={() => currentVoiceStepIndex > 0 ? setCurrentVoiceStepIndex(i => i - 1) : setStep('input')} 
                       />
                     )}
-                    {step === 'images' && <VideoFinder scenes={scenes} onFindVideo={handleProcessScene} onNext={() => setStep('preview')} />}
+                    {step === 'images' && (
+                      <VideoFinder 
+                        scenes={scenes} 
+                        onFindVideo={handleProcessScene} 
+                        onNext={() => setStep('preview')} 
+                        onBack={() => setStep('voice')}
+                      />
+                    )}
                     {step === 'preview' && <VideoPreview scenes={scenes} videoFormat={videoFormat} videoDetails={videoDetails} setVideoDetails={setVideoDetails} onNext={() => setStep('upload')} onBack={() => setStep('images')} />}
                     {step === 'upload' && <YouTubeUpload videoDetails={videoDetails} setVideoDetails={setVideoDetails} onNext={handleUploadComplete} onBack={() => setStep('preview')} user={youtubeUser} onConnect={async () => {}} onDisconnect={() => {}} onUpload={async()=>{}} onDownload={handleDownload} uploadProgress={uploadProgress} isUploading={isUploading} isDownloading={isDownloading} uploadError={uploadError} />}
                     {step === 'complete' && <CompletionScreen videoTitle={videoDetails.title} onReset={handleReset} />}

@@ -4,7 +4,7 @@ export type VideoProvider = 'pixabay' | 'pexels' | 'both';
 
 export interface Scene {
   id: number;
-  character?: string; // Character name or "Narrator"
+  character?: string; 
   scene_text_vietnamese: string;
   image_prompt_english: string;
   videoUrl?: string;
@@ -33,7 +33,7 @@ export interface VoiceSettings {
   speed: number;
   pitch: number;
   volume: number;
-  styles?: string[]; // New: Array of selected emotion styles
+  styles?: string[];
 }
 
 export interface SavedVideo {
@@ -56,6 +56,9 @@ export interface YouTubeUser {
   avatarUrl: string;
 }
 
+export type OverlayMode = 'none' | 'dust' | 'lightleak' | 'cinematic';
+export type TransitionType = 'none' | 'fade' | 'zoom' | 'flash' | 'blur' | 'random';
+
 export interface VideoDetails {
     title: string;
     author: string;
@@ -65,4 +68,6 @@ export interface VideoDetails {
     musicVolume: number;
     showSubtitles: boolean;
     showProgressBar: boolean;
+    overlayMode: OverlayMode;
+    transitionType: TransitionType; 
 }

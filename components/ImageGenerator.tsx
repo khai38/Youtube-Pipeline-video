@@ -6,6 +6,7 @@ interface VideoFinderProps {
   scenes: Scene[];
   onFindVideo: (sceneId: number, prompt: string, text: string) => void;
   onNext: () => void;
+  onBack: () => void;
 }
 
 const SceneCard: React.FC<{ 
@@ -48,7 +49,6 @@ const SceneCard: React.FC<{
                     <input 
                         type="text"
                         value={tempPrompt}
-                        // Fix: Cast e.target to access value
                         onChange={(e) => setTempPrompt((e.target as HTMLInputElement).value)}
                         placeholder="Nhập từ khóa tìm kiếm video..."
                         className="flex-grow bg-slate-900 border border-indigo-500/50 rounded px-2 py-1 text-xs text-indigo-300 outline-none focus:ring-1 focus:ring-indigo-500"
@@ -136,7 +136,7 @@ const SceneCard: React.FC<{
   );
 };
 
-const VideoFinder: React.FC<VideoFinderProps> = ({ scenes, onFindVideo, onNext }) => {
+const VideoFinder: React.FC<VideoFinderProps> = ({ scenes, onFindVideo, onNext, onBack }) => {
   const allReady = scenes.every(s => !!s.videoUrl && !!s.audioData);
 
   useEffect(() => {
@@ -183,6 +183,13 @@ const VideoFinder: React.FC<VideoFinderProps> = ({ scenes, onFindVideo, onNext }
             <p className="text-xs text-slate-500 italic">Vui lòng đợi hoặc chỉnh sửa các cảnh bị lỗi để tiếp tục...</p>
         )}
         <div className="flex gap-4">
+            <button 
+                onClick={onBack}
+                className="px-8 py-4 bg-slate-800 text-slate-300 font-black uppercase tracking-widest rounded-xl border border-slate-700 hover:bg-slate-700 transition-all flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+              Quay lại chọn giọng
+            </button>
             <button 
                 onClick={onNext} 
                 disabled={!allReady} 
